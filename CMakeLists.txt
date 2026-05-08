@@ -3,6 +3,7 @@ project(triton_anchor_linalg LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Pybind11
 find_package(pybind11 REQUIRED)

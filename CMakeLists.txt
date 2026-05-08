@@ -32,6 +32,17 @@ if(NOT EXISTS "${TRITON_SOURCE_DIR}/include/triton")
 endif()
 message(STATUS "Using Triton headers from: ${TRITON_SOURCE_DIR}/include")
 
+# 探测并加入已编译好的 Triton 目录 (用于寻找 Dialect.h.inc 等生成的头文件)
+if(DEFINED ENV{TRITON_BUILD_DIR})
+    set(TRITON_BUILD_DIR $ENV{TRITON_BUILD_DIR})
+endif()
+if(TRITON_BUILD_DIR)
+    message(STATUS "Using Triton built generated headers from: ${TRITON_BUILD_DIR}/include")
+    include_directories(${TRITON_BUILD_DIR}/include)
+else()
+    message(WARNING "TRITON_BUILD_DIR is not set. If compilation fails due to missing 'triton/Dialect/Triton/IR/Dialect.h.inc', please point TRITON_BUILD_DIR to your compiled Triton python/build/cmake... directory.")
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${TRITON_SOURCE_DIR}/cmake")
 # include(TritonMacros) # If TritonMacros is not available, we can manually define add_triton_library
 # We define a fallback macro in case TritonMacros is not found easily

@@ -12,7 +12,7 @@
 #ifndef TRITON_LINALG_DIALECT_LINALGEXT_IR_LINALGEXTSTRUCTEDOPS_TD
 #define TRITON_LINALG_DIALECT_LINALGEXT_IR_LINALGEXTSTRUCTEDOPS_TD
 
-include "triton-linalg/Dialect/LinalgExt/IR/LinalgExtBase.td"
+include "triton-anchor/Dialect/LinalgExt/IR/LinalgExtBase.td"
 
 //===----------------------------------------------------------------------===//
 // Op definition for BatchConv2DNhwcFhwcOp
@@ -512,6 +512,6 @@ def ReduceMinNanOp : NaiveReduceBaseOp<"reduce_min_nan", []> {
 // Named LinalgExt ops.
 //===----------------------------------------------------------------------===//
 
-include "triton-linalg/Dialect/LinalgExt/IR/LinalgExtNamedStructuredOps.yamlgen.td"
+include "triton-anchor/Dialect/LinalgExt/IR/LinalgExtNamedStructuredOps.yamlgen.td"
 
 #endif // TRITON_LINALG_DIALECT_LINALGEXT_IR_LINALGEXTSTRUCTEDOPS_TD

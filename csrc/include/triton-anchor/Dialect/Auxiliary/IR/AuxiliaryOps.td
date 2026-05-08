@@ -11,8 +11,8 @@
 #ifndef TRITON_LINALG_DIALECT_AUXILIARY_IR_AUXILIARYOPS_TD
 #define TRITON_LINALG_DIALECT_AUXILIARY_IR_AUXILIARYOPS_TD
 
-include "triton-linalg/Dialect/Auxiliary/IR/AuxiliaryDialect.td"
-include "triton-linalg/Dialect/Auxiliary/IR/AuxiliaryTypes.td"
+include "triton-anchor/Dialect/Auxiliary/IR/AuxiliaryDialect.td"
+include "triton-anchor/Dialect/Auxiliary/IR/AuxiliaryTypes.td"
 include "mlir/Dialect/LLVMIR/LLVMOpBase.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"

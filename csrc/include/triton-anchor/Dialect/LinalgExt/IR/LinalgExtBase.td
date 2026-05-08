@@ -7,8 +7,8 @@
 #ifndef TRITON_LINALG_DIALECT_LINALGEXT_IR_LINALGEXTBASE_TD
 #define TRITON_LINALG_DIALECT_LINALGEXT_IR_LINALGEXTBASE_TD
 
-include "triton-linalg/Dialect/LinalgExt/IR/LinalgExtEnums.td"
-include "triton-linalg/Dialect/LinalgExt/IR/LinalgExtInterface.td"
+include "triton-anchor/Dialect/LinalgExt/IR/LinalgExtEnums.td"
+include "triton-anchor/Dialect/LinalgExt/IR/LinalgExtInterface.td"
 include "mlir/Dialect/Linalg/IR/LinalgBase.td"
 include "mlir/Dialect/Linalg/IR/LinalgInterfaces.td"
 include "mlir/Interfaces/DestinationStyleOpInterface.td"

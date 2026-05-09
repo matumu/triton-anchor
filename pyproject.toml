@@ -1,19 +1,11 @@
 [build-system]
-requires = ["scikit-build-core>=0.5.0", "pybind11"]
-build-backend = "scikit_build_core.build"
-
-[tool.scikit-build]
-cmake.version = ">=3.15"
-wheel.packages = ["triton_anchor"]
-ninja.make-fallback = true
-
-[tool.scikit-build.cmake.define]
-CMAKE_BUILD_TYPE = "Release"
+requires = ["setuptools>=64", "wheel", "pybind11"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "triton-anchor"
-version = "0.1.0"
-description = "Unified Triton Compilation Frontend — Plugin-based architecture supporting AME Matrix, Tensor Processor, and gpGPU compute paradigms"
+version = "0.2.0"
+description = "Unified Triton Compilation Frontend — Plugin-based architecture supporting custom AI accelerators"
 readme = "README.md"
 license = {text = "Apache 2.0"}
 requires-python = ">=3.8"
@@ -28,36 +20,21 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 
-dependencies = []
+dependencies = ["filelock"]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
 ]
-sophgo = [
-    # triton-race must be installed separately
-]
-spacemit = [
-    # spine-triton must be installed separately
-]
+sophgo = []
+spacemit = []
 
 # ── Plugin entry points ──────────────────────────────────────────────
-# Backend plugins register here; `pip install triton-backend-xxx` auto-discovers
 [project.entry-points."triton.backends"]
-# Example (uncomment when backend packages are ready):
 # sophgo = "triton_anchor.plugins.sophgo_plugin:SophgoPlugin"
 # spacemit = "triton_anchor.plugins.spacemit_plugin:SpacemiTPlugin"
 
-# DSL extension plugins register here
 [project.entry-points."triton.dsl_extensions"]
-# Example:
-# smt = "triton_ext_spacemit.dsl:SmtExtension"
 
 [project.entry-points."triton.adapters"]
-# Example:
-# triton-linalg = "triton_anchor.adapters.triton_linalg_adapter:TritonLinalgAdapter"
-# triton-shared  = "triton_anchor.adapters.triton_shared_adapter:TritonSharedAdapter"
-
-[tool.setuptools.packages.find]
-include = ["triton_anchor*"]

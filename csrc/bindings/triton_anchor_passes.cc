@@ -24,7 +24,7 @@ void init_triton_anchor_passes_triton_to_linalg(py::module_ &m) {
   });
 }
 
-void init_triton_anchor(py::module &m) {
+void init_triton_anchor(py::module &&m) {
     m.def("load_dialects", [](mlir::MLIRContext &context) {
         mlir::DialectRegistry registry;
         registerTritonLinalgDialects(registry);

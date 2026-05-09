@@ -148,6 +148,7 @@ if(TRITON_BUILD_PYTHON_MODULE)
     ${PYTHON_SRC_PATH}/passes.cc
     ${PYTHON_SRC_PATH}/interpreter.cc
     ${PYTHON_SRC_PATH}/llvm.cc
+    csrc/bindings/triton_anchor_passes.cc
   )
 
   set(TRITON_LIBRARIES
@@ -183,6 +184,25 @@ if(TRITON_BUILD_PYTHON_MODULE)
     MLIRMemRefDialect
     MLIRTensorDialect
     MLIRAffineDialect
+
+    # triton-anchor 本身的内部库
+    TritonLinalgAnalysis
+    TritonLinalgPipelines
+    TritonLinalgUtils
+    ArithToLinalg
+    MathToLinalg
+    TritonToLinalg
+    LinalgExtDialect
+    LinalgExtInterface
+    LinalgExtTransforms
+    MathExtDialect
+    AuxiliaryDialect
+    AuxiliaryTransforms
+    TritonTransformsExtend
+    TritonInterfaceExtend
+    TritonDialectUtils
+    DialectUtils
+    LinalgExtDialectUtils
 
     # LLVM
     LLVMPasses
@@ -221,35 +241,3 @@ if(TRITON_BUILD_PYTHON_MODULE)
   set_target_properties(triton PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/triton/_C)
 endif()
 
-# ═══════════════════════════════════════════════════════════════════════
-# Part 4: 构建 _C.so（triton-anchor 的 Python 绑定）
-# ═══════════════════════════════════════════════════════════════════════
-pybind11_add_module(_C csrc/bindings/triton_anchor_passes.cc)
-
-target_link_libraries(_C PRIVATE
-    TritonLinalgAnalysis
-    TritonLinalgPipelines
-    TritonLinalgUtils
-    ArithToLinalg
-    MathToLinalg
-    TritonToLinalg
-    LinalgExtDialect
-    LinalgExtInterface
-    LinalgExtTransforms
-    MathExtDialect
-    AuxiliaryDialect
-    AuxiliaryTransforms
-    TritonTransformsExtend
-    TritonInterfaceExtend
-    TritonDialectUtils
-    DialectUtils
-    LinalgExtDialectUtils
-    triton
-)
-
-# 确保 _C.so 输出到 triton_anchor 目录
-set_target_properties(_C PROPERTIES 
-    OUTPUT_NAME "_C"
-    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/triton_anchor
-)
-install(TARGETS _C DESTINATION triton_anchor)

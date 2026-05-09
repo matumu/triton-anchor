@@ -75,7 +75,7 @@ class TritonLinalgAdapter(ILinalgPybindAdapter):
             AdapterConversionError: If any pass in the pipeline fails.
         """
         try:
-            from triton_anchor._C import anchor_passes as passes
+            from triton._C.libtriton.anchor import anchor_passes as passes
             from triton._C.libtriton import ir
         except ImportError:
             raise AdapterConversionError(

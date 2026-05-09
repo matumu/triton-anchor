@@ -230,7 +230,12 @@ target_link_libraries(_C PRIVATE
     LinalgExtTransforms
     MathExtDialect
     AuxiliaryDialect
+    AuxiliaryTransforms
     TritonTransformsExtend
+    TritonInterfaceExtend
+    TritonDialectUtils
+    DialectUtils
+    LinalgExtDialectUtils
     MLIRLinalgDialect
     MLIRLinalgTransforms
     MLIRLinalgUtils

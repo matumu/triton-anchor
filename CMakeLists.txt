@@ -48,9 +48,11 @@ if(NOT WIN32 AND NOT APPLE)
   link_libraries(stdc++fs)
 endif()
 
-if(UNIX AND NOT APPLE)
-  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--exclude-libs,ALL")
-endif()
+# 注意：--exclude-libs,ALL 已移至 libtriton target 级别,
+# 避免全局影响下游插件需要导出的方言符号。
+# if(UNIX AND NOT APPLE)
+#   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--exclude-libs,ALL")
+# endif()
 
 # ═══════════════════════════════════════════════════════════════════════
 # 路径定义
@@ -116,6 +118,25 @@ get_property(TRITON_UPSTREAM_LIBS GLOBAL PROPERTY TRITON_LIBS)
 # Part 2: 编译 triton-anchor 自有 C++ Pass（triton-linalg 等）
 # ═══════════════════════════════════════════════════════════════════════
 add_subdirectory(csrc)
+
+# ═══════════════════════════════════════════════════════════════════════
+# 导出下游硬件后端插件需要的方言符号
+# ═══════════════════════════════════════════════════════════════════════
+# 默认全局 -fvisibility=hidden 会导致所有符号在 libtriton.so 中不可见。
+# 但下游的硬件后端插件（如 triton-sophgo-backend）需要引用这些方言的
+# TypeID 和 Op 方法。这里显式将它们的可见性恢复为 default。
+set(TRITON_ANCHOR_EXPORTED_TARGETS
+    LinalgExtDialect
+    LinalgExtInterface
+    MathExtDialect
+    AuxiliaryDialect
+    TritonIR
+)
+foreach(target ${TRITON_ANCHOR_EXPORTED_TARGETS})
+    if(TARGET ${target})
+        target_compile_options(${target} PRIVATE -fvisibility=default)
+    endif()
+endforeach()
 
 # ═══════════════════════════════════════════════════════════════════════
 # Part 3: 构建 libtriton.so（上游 Triton 的 Python C++ 绑定）

@@ -32,6 +32,10 @@ include(AddMLIR)
 find_package(Python3 REQUIRED COMPONENTS Development Interpreter)
 find_package(pybind11 CONFIG REQUIRED HINTS "${Python3_SITELIB}")
 
+# 全局添加 Python 和 pybind11 的 include 路径（与 sophgo 保持一致）
+include_directories(${Python3_INCLUDE_DIRS})
+include_directories(${pybind11_INCLUDE_DIR})
+
 # ═══════════════════════════════════════════════════════════════════════
 # 编译器标志（与上游 Triton 保持一致）
 # ═══════════════════════════════════════════════════════════════════════
@@ -148,16 +152,9 @@ if(TRITON_BUILD_PYTHON_MODULE)
   set(PYTHON_SRC_PATH ${UPSTREAM_DIR}/python/src)
   include_directories(${PYTHON_SRC_PATH})
 
+  # 如果 setup.py 传入了 PYTHON_INCLUDE_DIRS，用它覆盖 find_package 的结果
   if(PYTHON_INCLUDE_DIRS)
     include_directories(${PYTHON_INCLUDE_DIRS})
-    include_directories(${pybind11_INCLUDE_DIR})
-  else()
-    find_package(Python3 REQUIRED COMPONENTS Development Interpreter)
-    include_directories(${Python3_INCLUDE_DIRS})
-    include_directories(${pybind11_INCLUDE_DIR})
-    link_directories(${Python3_LIBRARY_DIRS})
-    link_libraries(${Python3_LIBRARIES})
-    add_link_options(${Python3_LINK_OPTIONS})
   endif()
 
   # 后端标识（空 = 无硬件后端，由 triton-anchor 插件机制代替）
@@ -243,6 +240,8 @@ if(TRITON_BUILD_PYTHON_MODULE)
   endif()
 
   target_link_libraries(triton PUBLIC ${TRITON_LIBRARIES})
+  # 确保 pybind11 头文件路径对 triton 可见（pybind11 3.x 通过 target 传递 include）
+  target_link_libraries(triton PRIVATE pybind11::headers)
 
   if(WIN32)
     target_link_libraries(triton PRIVATE ${CMAKE_DL_LIBS})

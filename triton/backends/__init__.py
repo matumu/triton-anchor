@@ -35,6 +35,7 @@ class Backend:
 def _discover_backends():
     backends = dict()
     root = os.path.dirname(__file__)
+    # Discover in-tree backends
     for name in os.listdir(root):
         if not os.path.isdir(os.path.join(root, name)):
             continue
@@ -44,6 +45,25 @@ def _discover_backends():
         driver = _load_module(name, os.path.join(root, name, 'driver.py'))
         backends[name] = Backend(_find_concrete_subclasses(compiler, BaseBackend),
                                  _find_concrete_subclasses(driver, DriverBase))
+
+    # Discover out-of-tree backends via python entry_points
+    import importlib.metadata
+    try:
+        eps = importlib.metadata.entry_points(group="triton.backends")
+    except TypeError:
+        # Python 3.8/3.9 compatibility
+        eps = importlib.metadata.entry_points().get("triton.backends", [])
+
+    for ep in eps:
+        try:
+            # triton_sophgo/__init__.py automatically injects itself into `backends` and sets driver
+            # so importing the top-level module is enough to trigger the backend registration.
+            top_module_name = ep.module.split('.')[0]
+            import importlib
+            importlib.import_module(top_module_name)
+        except Exception as e:
+            print(f"Warning: Failed to load out-of-tree backend '{ep.name}': {e}")
+
     return backends
 
 

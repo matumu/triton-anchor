@@ -646,17 +646,16 @@ struct TritonReducePattern : public OpConversionPattern<triton::ReduceOp> {
               triton::linalg_ext::findPayloadOp(&op.getCombineOp().front());
           if (!payloadOp)
             break;
-
+          
           // Special handling for maxnumf and minnumf
-          // TPU backend doesn't support NaN as neutral element, use infinity
-          // instead
+          // TPU backend doesn't support NaN as neutral element, use infinity instead
           auto resultType = payloadOp->getResult(0).getType();
           std::optional<TypedAttr> fillValAttr;
-
+          
           if (isa<arith::MaxNumFOp>(payloadOp)) {
             // For maxnumf, use negative infinity instead of NaN
             fillValAttr = arith::getIdentityValueAttr(
-                arith::AtomicRMWKind::maximumf, resultType, rewriter, loc,
+                arith::AtomicRMWKind::maximumf, resultType, rewriter, loc, 
                 /*useOnlyFiniteValue=*/false);
           } else if (isa<arith::MinNumFOp>(payloadOp)) {
             // For minnumf, use positive infinity instead of NaN
@@ -667,7 +666,7 @@ struct TritonReducePattern : public OpConversionPattern<triton::ReduceOp> {
             // For other operations, use the default neutral element
             fillValAttr = arith::getNeutralElement(payloadOp);
           }
-
+          
           // When the requirements are not met, go to the later general
           // implementation.
           if (!fillValAttr.has_value())

@@ -1038,10 +1038,12 @@ void ExtractAnalysis::visitOperand(Value operand, ExtractState &state,
 template <typename OpTy>
 LogicalResult ExtractAnalysis::rewriteExtractLikeOp(OpTy op,
                                                     PatternRewriter &rewriter) {
-  static_assert((std::is_same_v<OpTy, tensor::ExtractOp> ||
-                 std::is_same_v<OpTy, tensor::ExtractSliceOp>) &&
-                "Only tensor.extract and "
-                "tensor.extract_slice are supported yet.");
+  static_assert(
+      (std::is_same_v<OpTy, tensor::ExtractOp> ||
+       std::is_same_v<
+           OpTy,
+           tensor::ExtractSliceOp>)&&"Only tensor.extract and "
+                                     "tensor.extract_slice are supported yet.");
 
   // Only move rank-reduced tensor.extract_slice backward.
   if constexpr (std::is_same_v<OpTy, tensor::ExtractSliceOp>)

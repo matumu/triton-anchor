@@ -158,3 +158,17 @@ pip install -e ".[sophgo]"
 ## License
 
 Apache 2.0
+
+
+
+
+<!-- sync-race-marker -->
+## Sync from triton-race
+
+| 项目 | 值 |
+|---|---|
+| triton-race commit | `059f38e668050f137450b40adcdf953af7d54df7` |
+| commit 日期 | 2026-05-13 11:08:43 +0800 |
+| commit 信息 | [fix]: For load/store op, check that all dimensions of the tensor are… (#47) |
+| 同步时间 | 2026-05-14 16:41:14 |
+<!-- sync-race-marker -->

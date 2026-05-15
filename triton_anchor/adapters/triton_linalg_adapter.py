@@ -75,17 +75,17 @@ class TritonLinalgAdapter(ILinalgPybindAdapter):
             AdapterConversionError: If any pass in the pipeline fails.
         """
         try:
-            from triton._C.libtriton import ir, passes
+            from triton._C.libtriton.anchor import anchor_passes as passes
+            from triton._C.libtriton import ir
         except ImportError:
             raise AdapterConversionError(
-                self.name(), detail="triton._C.libtriton not available. Is triton_race installed?"
+                self.name(), detail="triton_anchor._C not available. Is the C++ extension built?"
             )
 
-        # Check that race passes are available
-        if not hasattr(passes, 'race') or not hasattr(passes.race, 'triton_to_linalg'):
+        # Check that anchor passes are available
+        if not hasattr(passes, 'triton_to_linalg'):
             raise AdapterConversionError(
-                self.name(), detail="passes.race.triton_to_linalg not available. "
-                "Ensure triton_race was built with RACE backend enabled."
+                self.name(), detail="anchor_passes.triton_to_linalg not available."
             )
 
         # Pre-process: fix allow_reorder attribute format
@@ -121,22 +121,26 @@ class TritonLinalgAdapter(ILinalgPybindAdapter):
 
     def _add_passes(self, pm, passes) -> None:
         """Add the triton-linalg conversion pass pipeline."""
-        tl = passes.race.triton_to_linalg
+        tl = passes.triton_to_linalg
 
-        tl.add_triton_to_ppl(pm)
+        # Note: triton_to_ppl has been stripped. The backend should handle it if needed.
         tl.add_wrap_func_body_with_single_block(pm)
-        passes.common.add_inliner(pm)
-        passes.common.add_canonicalizer(pm)
+        
+        # We need common passes from libtriton
+        from triton._C.libtriton.passes import common
+        
+        common.add_inliner(pm)
+        common.add_canonicalizer(pm)
         tl.add_canonicalize_triton(pm)
         tl.add_pointer_strength_reduction(pm)
-        passes.common.add_canonicalizer(pm)
+        common.add_canonicalizer(pm)
         tl.add_triton_to_linalg(pm)
         tl.add_extract_like_move_backward(pm)
-        passes.common.add_canonicalizer(pm)
+        common.add_canonicalizer(pm)
         tl.add_arith_to_linalg(pm)
         tl.add_math_to_linalg(pm)
-        passes.common.add_cse(pm)
-        passes.common.add_licm(pm)
+        common.add_cse(pm)
+        common.add_licm(pm)
         tl.add_wrap_func_body_with_single_block(pm)
 
     def _extract_kernel_name(self, mod) -> str:

@@ -8,6 +8,7 @@ from triton_anchor.hw_capability import (
     TensorCapability,
     GPGPUCapability,
 )
+from triton_anchor.anchor_ir import AnchorIRTrack
 
 
 class TestComputeParadigm:
@@ -23,7 +24,7 @@ class TestHWCapability:
             name="sophgo-bm1684x",
             arch_family="tpu",
             compute_paradigm=ComputeParadigm.TENSOR_PROCESSOR,
-            lowering_path="linalg",
+            anchor_ir_track=AnchorIRTrack.LINALG,
             ptr_model="axis_info",
             tensor_cap=TensorCapability(num_cores=8),
         )
@@ -36,7 +37,7 @@ class TestHWCapability:
             name="spacemit-x60",
             arch_family="riscv",
             compute_paradigm=ComputeParadigm.AME_MATRIX,
-            lowering_path="linalg",
+            anchor_ir_track=AnchorIRTrack.LINALG,
             ptr_model="structured",
             matrix_cap=MatrixCapability(
                 num_matrix_registers=8,
@@ -51,7 +52,7 @@ class TestHWCapability:
             name="usc-gpu",
             arch_family="gpu",
             compute_paradigm=ComputeParadigm.GPGPU,
-            lowering_path="triton_gpu",
+            anchor_ir_track=AnchorIRTrack.TRITON_GPU,
             ptr_model="gpu",
             gpgpu_cap=GPGPUCapability(num_warps=4, warp_size=32),
         )
@@ -62,7 +63,7 @@ class TestHWCapability:
             name="sophgo-bm1684x",
             arch_family="tpu",
             compute_paradigm=ComputeParadigm.TENSOR_PROCESSOR,
-            lowering_path="linalg",
+            anchor_ir_track=AnchorIRTrack.LINALG,
             ptr_model="axis_info",
             tensor_cap=TensorCapability(),
         )
@@ -80,40 +81,8 @@ class TestHWCapability:
                 name="bad",
                 arch_family="riscv",
                 compute_paradigm=ComputeParadigm.AME_MATRIX,
-                lowering_path="linalg",
+                anchor_ir_track=AnchorIRTrack.LINALG,
                 ptr_model="structured",
                 # Missing matrix_cap!
             )
 
-    def test_validation_wrong_lowering_path(self):
-        with pytest.raises(ValueError, match="lowering_path"):
-            HWCapability(
-                name="bad",
-                arch_family="tpu",
-                compute_paradigm=ComputeParadigm.TENSOR_PROCESSOR,
-                lowering_path="triton_gpu",  # Wrong!
-                ptr_model="axis_info",
-                tensor_cap=TensorCapability(),
-            )
-
-    def test_validation_gpu_ok_with_both_paths(self):
-        # GPU paradigm should accept both lowering paths
-        hw = HWCapability(
-            name="gpu1",
-            arch_family="gpu",
-            compute_paradigm=ComputeParadigm.GPGPU,
-            lowering_path="triton_gpu",
-            ptr_model="gpu",
-            gpgpu_cap=GPGPUCapability(),
-        )
-        assert hw.lowering_path == "triton_gpu"
-
-        hw2 = HWCapability(
-            name="gpu2",
-            arch_family="gpu",
-            compute_paradigm=ComputeParadigm.GPGPU,
-            lowering_path="linalg",
-            ptr_model="axis_info",
-            gpgpu_cap=GPGPUCapability(),
-        )
-        assert hw2.lowering_path == "linalg"

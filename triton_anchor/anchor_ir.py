@@ -20,7 +20,7 @@ Key invariants:
   - Each Track has its own whitelist and forbidden list
   - Numerical consistency: same Track, different Adapters → same numerical
     results within tolerance (float rtol≤1e-5, int bitwise)
-  - Extension dialects via ``BackendPlugin.get_allowed_dialects()``
+  - Extension dialects declared by backend via ``get_allowed_dialects()``
 
 Stability guarantee: the allowed dialect whitelist is append-only.
 """
@@ -33,7 +33,7 @@ from enum import Enum
 from typing import List, Set, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    pass  # BackendPlugin forward reference
+    pass
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -241,7 +241,7 @@ class AnchorIRValidator:
                         op_name=op_name,
                         message=(
                             f"Unknown dialect '{dialect}'. "
-                            f"Register it via BackendPlugin.get_allowed_dialects()."
+                            f"Register it via backend's get_allowed_dialects()."
                         )
                     ))
 

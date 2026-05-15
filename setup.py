@@ -133,8 +133,8 @@ class CMakeBuild(build_ext):
             cwd=cmake_dir,
         )
 
-        # 收集所有的头文件 (.h 和 .inc) 到 triton/include 目录，以便打包到 wheel 中
-        include_out_dir = os.path.join(get_base_dir(), "triton", "include")
+        # 收集所有的头文件 (.h 和 .inc) 到 python/triton/include 目录，以便打包到 wheel 中
+        include_out_dir = os.path.join(get_base_dir(), "python", "triton", "include")
         os.makedirs(include_out_dir, exist_ok=True)
 
         src_include_dirs = [
@@ -181,7 +181,6 @@ def get_packages():
         "triton_anchor/adapters",
         "triton_anchor/extensions",
         "triton_anchor/language",
-        "triton_anchor/plugins",
         "triton_anchor/tests",
     ]
     return packages
@@ -193,6 +192,7 @@ setup(
     author="Triton Anchor Contributors",
     description="Unified Triton Compilation Frontend for custom AI accelerators",
     long_description="",
+    package_dir={"": "python"},
     packages=get_packages(),
     install_requires=["filelock"],
     package_data={
@@ -204,7 +204,7 @@ setup(
         ],
     },
     include_package_data=True,
-    ext_modules=[CMakeExtension("triton", "triton/_C/")],
+    ext_modules=[CMakeExtension("triton", "python/triton/_C/")],
     cmdclass={
         "build_ext": CMakeBuild,
         "build_py": CMakeBuildPy,

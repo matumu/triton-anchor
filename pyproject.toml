@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "triton-anchor"
 version = "0.2.0"
-description = "Unified Triton Compilation Frontend — Plugin-based architecture supporting custom AI accelerators"
+description = "Unified Triton Compilation Frontend — Converting Triton TTIR to hardware-aware Linalg IR"
 readme = "README.md"
 license = {text = "Apache 2.0"}
 requires-python = ">=3.8"
@@ -30,10 +30,8 @@ dev = [
 sophgo = []
 spacemit = []
 
-# ── Plugin entry points ──────────────────────────────────────────────
+# ── Out-of-tree hardware backends will register here via entry_points ──
 [project.entry-points."triton.backends"]
-# sophgo = "triton_anchor.plugins.sophgo_plugin:SophgoPlugin"
-# spacemit = "triton_anchor.plugins.spacemit_plugin:SpacemiTPlugin"
 
 [project.entry-points."triton.dsl_extensions"]
 

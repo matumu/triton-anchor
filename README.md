@@ -1,123 +1,27 @@
 # triton-anchor
 
-**统一 Triton 编译前端 v0.1** — 面向多款芯片的共性编译前端，在统一的 Triton 编译前端中同时支持 **RISC-V Matrix 扩展指令集**（**AME）**、**RISC-V Tensor 扩展指令集**和 **SIMT 扩展指令集（GPGPU）** 的插件化架构。
+**统一 Triton 编译前端** — 将 Triton TTIR 转换为硬件感知的 Linalg IR，作为 Triton 核心与各硬件后端之间的桥梁。
 
-## 架构概览
+## 架构设计
+
+triton-anchor 将编译流程前端化，分离了与具体硬件无关的公共优化与转换逻辑，整体架构分为三个核心层级：
 
 ```
-Layer 0  — DSL Extensions       (triton.dsl_extensions entry_points)
-Layer 1  — TTIR Pipeline        (7 mandatory passes + _require_pass/_try_add_pass)
-Layer 2  — Linalg Adapters      (ILinalgOptAdapter / ILinalgPybindAdapter)
-Layer 2.5 — AnchorIR Spec       (dual-track whitelist + two-phase validation)
-Layer 3  — Backend Plugins      (triton.backends entry_points)
+Layer 1    — TTIR Pipeline        (7 mandatory passes)
+Layer 2    — Linalg Adapters      (ILinalgOptAdapter / ILinalgPybindAdapter)
+Layer 2.5  — AnchorIR Spec        (dual-track whitelist + two-phase validation)
 ```
 
 ### 核心设计特性
 
-- **双轨 AnchorIR**：Linalg Track（AME / Tensor）与 TritonGPU Track（gpGPU）独立白名单
-- **两阶段验证**：`validate_pre_hook()` → `on_anchor_ir_ready()` → `validate_post_hook()` 确保后端注入的 Op 也受契约约束
-- **ABI 隔离**：`ILinalgOptAdapter`（subprocess 模式）与 `ILinalgPybindAdapter`（pybind 模式）在类型层面隔离 C++ ABI
-- **Paradigm / Track 解耦**：`ComputeParadigm` 与 `AnchorIRTrack` 独立声明，后端可自由组合
-
-## 支持的计算范式
-
-| 范式 | 硬件 | 后端 | Adapter | AnchorIR Track | 状态 |
-|------|------|------|---------|---------------|------|
-| **Tensor Processor** | Sophgo BM1684X | `sophgo` | `ILinalgPybindAdapter` | Linalg | ✅ 适配中 |
-| **AME Matrix** | SpacemiT X60 | `spacemit` | `ILinalgOptAdapter` | Linalg | 🔲 Stub |
-| **gpGPU** | USC GPU | `usc` | (TritonGPU 直通) | TritonGPU | 🔲 Stub |
-| **Reference** | CPU | `cpu` | — | Linalg | 🔲 Stub |
-
-## 快速开始
-
-```python
-from triton_anchor import HWCapability, ComputeParadigm, AnchorIRTrack
-from triton_anchor.plugins.sophgo_plugin import SophgoPlugin
-from triton_anchor.adapters.triton_linalg_adapter import TritonLinalgAdapter
-from triton_anchor.adapters.registry import AdapterRegistry
-from triton_anchor.plugins.registry import PluginRegistry
-
-# 注册后端
-plugin = SophgoPlugin()
-PluginRegistry.register(plugin)
-
-# 注册适配器
-adapter = TritonLinalgAdapter()
-AdapterRegistry.register(adapter)
-
-# 查看硬件能力
-hw = plugin.hw_capability
-print(f"Backend:    {plugin.name}")
-print(f"Paradigm:   {hw.compute_paradigm.value}")
-print(f"IR Track:   {hw.anchor_ir_track.value}")
-print(f"Adapter:    {hw.preferred_adapter}")
-print(f"GPUTarget:  {hw.to_gpu_target()}")
-
-# 两阶段 AnchorIR 验证
-from triton_anchor.anchor_ir import AnchorIRValidator
-
-validator = AnchorIRValidator(track=hw.anchor_ir_track)
-# Phase 1: pre-hook（基础白名单）
-pre_violations = validator.validate_pre_hook(ir_text)
-# ... on_anchor_ir_ready() ...
-# Phase 2: post-hook（含后端扩展白名单）
-post_violations = validator.validate_post_hook(ir_text, ext_allowed=set(plugin.get_allowed_dialects()))
-
-# 查看 Op 覆盖度
-from triton_anchor.op_coverage import OpCoverageMatrix
-from triton_anchor.plugins.spacemit_plugin import SpacemiTPlugin
-
-matrix = OpCoverageMatrix()
-matrix.register_plugin(plugin)
-matrix.register_plugin(SpacemiTPlugin())
-print(matrix.generate_report())
-```
-
-## 目录结构
-
-```
-triton_anchor/
-├── __init__.py              # 公共 API: HWCapability, ComputeParadigm, AnchorIRTrack
-├── hw_capability.py         # HWCapability + ComputeParadigm + AnchorIRTrack 解耦
-├── anchor_ir.py             # AnchorIR 双轨规范 + 两阶段验证器
-├── pipeline.py              # 统一 TTIR Pipeline (7 pass + _require_pass + _try_add_pass)
-├── compiler.py              # 统一编译入口 (两阶段验证 + 6 Hook 注入点)
-├── op_coverage.py           # 算子覆盖矩阵
-│
-├── adapters/                # Layer 2: Linalg Adapters
-│   ├── base.py              # ILinalgOptAdapter (subprocess) / ILinalgPybindAdapter (pybind)
-│   ├── registry.py          # Adapter 注册表
-│   ├── triton_linalg_adapter.py  # ✅ ILinalgPybindAdapter — triton_race 管线封装
-│   ├── triton_shared_adapter.py  # 🔲 ILinalgOptAdapter  — triton-shared (SpacemiT)
-│   └── hybrid_adapter.py        # 🔲 ILinalgOptAdapter  — Hybrid (Future Work)
-│
-├── plugins/                 # Layer 3: Backend Plugins
-│   ├── base.py              # BackendPlugin 接口 (含 get_allowed_dialects())
-│   ├── registry.py          # Plugin 注册表
-│   ├── sophgo_plugin.py     # ✅ Sophgo TPU (wraps triton_race)
-│   ├── spacemit_plugin.py   # 🔲 SpacemiT RISC-V AME
-│   ├── usc_plugin.py        # 🔲 USC GPU (TritonGPU Track)
-│   └── cpu_plugin.py        # 🔲 CPU Reference
-│
-├── extensions/              # Layer 0: DSL Extensions
-│   ├── base.py              # DSLExtensionPlugin 接口
-│   └── registry.py          # Extension 注册表
-│
-├── language/ext/            # DSL 扩展命名空间 (预留)
-└── tests/                   # 单元测试
-```
-
-## 五个核心不变量
-
-| 不变量 | 内容 | 稳定性 |
-|--------|------|--------|
-| **TTIR Pipeline** | 7 必选 Pass + `_require_pass` 关键路径保护 | 仅增不删 |
-| **HWCapability** | 声明式硬件能力 + `AnchorIRTrack` 枚举 | 字段仅增不删 |
-| **AnchorIR 双轨** | Linalg / TritonGPU 双轨白名单 + 禁止 `tt.*`/`smt.*` | 仅增不删 |
-| **两阶段验证** | `pre_hook` → Hook 注入 → `post_hook` | 执行顺序不变 |
-| **Plugin 接口** | `BackendPlugin` / `ILinalgOptAdapter` / `ILinalgPybindAdapter` / `DSLExtensionPlugin` | 向后兼容 |
+- **双轨 AnchorIR**：为不同的计算硬件提供两条标准路径——Linalg Track（面向 Tensor Processor 与 AME Matrix）与 TritonGPU Track（面向 gpGPU），每条路径拥有独立的 Op 白名单。
+- **两阶段验证**：AnchorIR 的合法性会经历 `validate_pre_hook()` → Hook 注入 → `validate_post_hook()` 两阶段检查，确保底层硬件后端注入的扩展 Op 也严格受契约约束。
+- **ABI 隔离**：提供 `ILinalgOptAdapter`（基于子进程调用 `opt` 的模式）与 `ILinalgPybindAdapter`（基于 Pybind 绑定的模式），在类型层面隔离 C++ ABI，避免多后端带来的符号冲突。
+- **Paradigm / Track 解耦**：`ComputeParadigm`（计算范式）与 `AnchorIRTrack`（IR 轨道）独立声明，硬件后端可根据自身特性自由组合。
 
 ## 编译流程
+
+triton-anchor 负责统一管线的前半部分（TTIR → Linalg / TritonGPU），后半部分（Linalg → 硬件二进制）由各硬件后端独立完成。
 
 ```
 AST → TTIR
@@ -126,40 +30,125 @@ AST → TTIR
   │     ├── inliner → combine → canonicalizer → reorder_broadcast → cse → licm → symbol_dce
   │     └── [GPU] _require_pass(add_rewrite_tensor_pointer)
   │
-  ├── Hook ②: on_ttir_ready
-  │
   ├── Layer 2: Adapter.convert()
   │     ├── Linalg Track: TritonLinalgAdapter (pybind) / TritonSharedAdapter (subprocess)
   │     └── TritonGPU Track: 直通后端
   │
-  ├── Layer 2.5: 两阶段 AnchorIR 验证
+  ├── Layer 2.5: AnchorIR 验证
   │     ├── validate_pre_hook()  ← 基础白名单
-  │     ├── Hook ④: on_anchor_ir_ready()
   │     └── validate_post_hook() ← 基础 + 扩展白名单
   │
-  └── Layer 3: plugin.lower_anchor_ir_to_target() → binary
+  └── 硬件后端 (out-of-tree)
+        ├── Tensor Processor:   Linalg → 专用编译栈 → .so
+        ├── AME Matrix:         Linalg → LLVM → .so
+        └── gpGPU:              TritonGPU → SPIR-V → binary
 ```
 
-## 安装
+## 硬件后端集成
+
+硬件后端（如特定的 TPU 或 NPU）作为**独立的 out-of-tree 包**实现，不在 triton-anchor 内部维护。
+
+### 自动发现与注册
+各硬件后端通过 `pyproject.toml` 中的 `entry_points` 机制自动注册，在 `import triton` 时被 Triton 发现：
+
+```toml
+# 硬件后端包的 pyproject.toml
+[project.entry-points."triton.backends"]
+my_device = "triton_my_device"
+```
+
+后端包的 `__init__.py` 需要在模块级导出以下两个属性供 pull 模式使用：
+
+```python
+# triton_my_device/__init__.py
+from .compiler import MyDeviceBackend
+from .runtime import MyDeviceDriver
+
+compiler_cls = MyDeviceBackend   # 继承 triton.backends.compiler.BaseBackend
+driver_cls = MyDeviceDriver      # 继承 triton.backends.driver.DriverBase
+```
+
+### 计算范式参考
+
+| 计算范式 | 包名示例 | 说明 |
+|------|------|------|
+| **Tensor Processor** | `triton-sophgo-backend` | 面向具备独立 Tensor Core/NPU 的专用加速器 |
+| **AME Matrix** | — | 面向带矩阵扩展指令集的 RISC-V 架构 |
+| **gpGPU** | — | 面向 SIMT 架构 GPU |
+
+## 快速开始
+
+在前端可以方便地声明并查询硬件能力，或对 IR 进行规范验证：
+
+```python
+from triton_anchor import HWCapability, ComputeParadigm, AnchorIRTrack
+
+# 声明硬件能力
+hw = HWCapability(
+    name="my-device",
+    arch_family="tpu",
+    compute_paradigm=ComputeParadigm.TENSOR_PROCESSOR,
+    anchor_ir_track=AnchorIRTrack.LINALG,
+    ptr_model="axis_info",
+)
+
+# AnchorIR 两阶段验证
+from triton_anchor.anchor_ir import AnchorIRValidator
+
+validator = AnchorIRValidator(track=AnchorIRTrack.LINALG)
+# Phase 1: pre-hook（基础白名单验证）
+violations = validator.validate_pre_hook(ir_text)
+# Phase 2: post-hook（含后端扩展白名单验证）
+violations = validator.validate_post_hook(ir_text, ext_allowed={"ppl"})
+```
+
+## 安装与开发
+
+> 💡 **详细指南**：关于如何从零配置 Docker 环境、安装系统依赖及完整的构建流程，请参阅 [构建与环境配置指南](docs/build.md)。
+
+推荐使用 [uv](https://github.com/astral-sh/uv) 进行极速环境搭建和基础依赖安装：
 
 ```bash
-# 开发模式安装
-pip install -e .
+# 开发模式安装 triton-anchor
+uv pip install [--no-build-isolation] -e .
 
-# 运行测试
-pip install -e ".[dev]"
-pytest triton_anchor/tests/ -v
-
-# 安装 Sophgo 后端依赖
-pip install -e ".[sophgo]"
-# 需要单独安装 triton_race 并配置 PPL_PROJECT_ROOT、PPLCOMPILE_PATH
+# 构建可分发的 wheel 包
+uv build --wheel [--no-build-isolation]
 ```
+
+## 目录结构
+
+```
+triton_anchor/
+├── __init__.py              # 公共 API: HWCapability, ComputeParadigm, AnchorIRTrack
+├── hw_capability.py         # HWCapability 属性与解耦设计
+├── anchor_ir.py             # AnchorIR 双轨规范白名单 + 两阶段验证器
+├── pipeline.py              # 统一 TTIR Pipeline (7 pass)
+│
+├── adapters/                # Layer 2: Linalg Adapters
+│   ├── base.py              # ILinalgOptAdapter (subprocess) / ILinalgPybindAdapter (pybind)
+│   ├── registry.py          # Adapter 注册表
+│   ├── triton_linalg_adapter.py  # ✅ ILinalgPybindAdapter — triton-linalg pass 管线
+│   ├── triton_shared_adapter.py  # 🔲 ILinalgOptAdapter  — triton-shared
+│   └── hybrid_adapter.py        # 🔲 ILinalgOptAdapter  — Hybrid (Future Work)
+│
+├── extensions/              # DSL Extensions（层级预留）
+├── language/ext/            # DSL 扩展命名空间（前缀预留）
+└── tests/                   # 单元测试
+```
+
+## 核心不变量
+
+| 不变量 | 内容 | 稳定性 |
+|--------|------|--------|
+| **TTIR Pipeline** | 7 必选 Pass + `_require_pass` 关键路径保护 | 仅增不删 |
+| **HWCapability** | 声明式硬件能力 + `AnchorIRTrack` 枚举 | 字段仅增不删 |
+| **AnchorIR 双轨** | Linalg / TritonGPU 双轨白名单 + 禁止 `tt.*`/`smt.*` | 仅增不删 |
+| **Adapter 接口** | `ILinalgOptAdapter` / `ILinalgPybindAdapter` | 向后兼容 |
 
 ## License
 
 Apache 2.0
-
-
 
 
 <!-- sync-race-marker -->

@@ -1,0 +1,101 @@
+name: "🐛 Bug Report"
+title: "[Bug]: "
+description: 提交一个 Bug 报告
+labels: ["bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢您提交 Bug 报告！请尽量提供详细的复现信息，以便我们快速定位和修复问题。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 请简要描述您遇到的问题。
+      placeholder: "例如：在执行 build_ttir_pipeline 时，某个 pass 触发了断言错误……"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 请提供详细的复现步骤。
+      placeholder: |
+        1. 安装 triton-anchor：`uv pip install -e .`
+        2. 编写 kernel：`@triton.jit def xxx(...): ...`
+        3. 执行编译：`...`
+        4. 观察到错误：`...`
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 请描述您期望的正确行为。
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 请描述实际发生的行为，包括完整的错误信息或日志。
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: 请提供以下环境信息。
+      value: |
+        - **操作系统**: 
+        - **Python 版本**: 
+        - **triton-anchor 版本/commit**: 
+        - **LLVM/MLIR 版本**: 
+        - **硬件后端**: （如 triton-sophgo-backend 等）
+        - **安装方式**: （uv pip install -e . / wheel / Docker）
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: 相关组件
+      description: Bug 涉及哪个模块？
+      options:
+        - TTIR Pipeline
+        - Linalg Adapter
+        - AnchorIR Spec
+        - HWCapability
+        - FlagGems 集成
+        - 构建系统
+        - 其他
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 严重程度
+      description: 请评估该 Bug 的影响程度。
+      options:
+        - "致命 (Blocker): 完全阻塞开发/使用"
+        - "严重 (Critical): 核心功能不可用"
+        - "一般 (Major): 功能受限但有 workaround"
+        - "轻微 (Minor): 不影响主要功能"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 补充信息
+      description: 任何有助于排查的额外信息，如最小复现代码、IR dump、截图等。
+    validations:
+      required: false

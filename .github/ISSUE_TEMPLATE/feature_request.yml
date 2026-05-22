@@ -1,0 +1,75 @@
+name: "✨ Feature Request"
+title: "[Feature]: "
+description: 提交一个新功能或增强需求
+labels: ["enhancement"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢您为 triton-anchor 提出新功能建议！请尽量详细地描述您的需求，以便我们评估和规划。
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: 动机 / 背景
+      description: 请描述您遇到的问题或痛点，以及为什么需要这个功能。
+      placeholder: "例如：在对接 FlagGems 算子库时，发现缺少对 xxx 的支持……"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望方案
+      description: 请描述您期望的功能表现或设计思路。
+      placeholder: "例如：希望在 AnchorIR 白名单中新增 xxx Op，并提供对应的 Adapter 转换……"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案
+      description: 是否考虑过其他方案？请简要描述。
+      placeholder: "例如：也可以通过在后端 Hook 中手动注入，但维护成本较高……"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: 相关组件
+      description: 该功能涉及哪个模块？
+      options:
+        - TTIR Pipeline
+        - Linalg Adapter
+        - AnchorIR Spec
+        - HWCapability
+        - FlagGems 集成
+        - 文档
+        - 其他
+    validations:
+      required: true
+
+  - type: dropdown
+    id: paradigm
+    attributes:
+      label: 相关计算范式
+      description: 该功能主要面向哪种计算范式？
+      options:
+        - Tensor Processor
+        - AME Matrix (RISC-V)
+        - gpGPU (SIMT)
+        - 所有范式
+        - 不确定
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 补充信息
+      description: 任何有助于理解需求的额外信息、截图或参考链接。
+    validations:
+      required: false

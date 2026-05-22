@@ -44,6 +44,9 @@ pip3 install uv --break-system-packages -i https://pypi.tuna.tsinghua.edu.cn/sim
 # 创建并激活虚拟环境
 uv venv /opt/venv
 source /opt/venv/bin/activate
+
+# 安装构建依赖
+uv pip install setuptools wheel pybind11
 ```
 
 ## 3. 准备 LLVM 工具链
@@ -73,7 +76,7 @@ source /opt/venv/bin/activate
 
 4. 喝杯咖啡，这需要花费相当长的一段时间。
 
-5. 编译完成后，你的 LLVM 构建目录为 `$HOME/llvm-project/build`。请在接下来的安装步骤中将其配置给 `LLVM_SYSPATH` 环境变量。
+5. 编译完成后，你的 LLVM 构建目录为 `$HOME/llvm-project/build`。你可以直接将其作为参数传给 `envsetup.sh` 脚本来进行环境变量初始化。
 
 ## 4. 安装 triton-anchor
 
@@ -83,17 +86,18 @@ source /opt/venv/bin/activate
 # 假设你已经克隆了代码到 /triton/triton-anchor
 cd /triton/triton-anchor
 
-# 配置 LLVM 工具链路径 (必需，供 CMake 寻找 MLIR/LLVM)
-export LLVM_SYSPATH=/path/to/llvm-release
+# 使用提供的 envsetup.sh 脚本快速配置 LLVM 编译环境变量
+# 默认配置路径为 /triton/llvm-release
+source envsetup.sh
+
+# 如果您有自定义的 LLVM 构建路径，也可以直接将其作为参数传入：
+# source envsetup.sh /path/to/llvm-release
 
 # 1. 直接安装（开发模式）
-uv pip install [--no-build-isolation] -e .
+uv pip install --no-build-isolation -e .
 
-# 2. 如果需要运行单元测试，安装 dev 依赖
-uv pip install -e ".[dev]"
-
-# 3. 如果需要构建分发包 (wheel / sdist)
-uv build --wheel [--no-build-isolation]
+# 2. 如果需要构建分发包 (wheel / sdist)
+uv build --wheel --no-build-isolation
 ```
 
 ## 5. 构建与集成硬件后端 (Out-of-Tree)
@@ -111,4 +115,10 @@ python3 -c "import triton_anchor; print('triton-anchor loaded')"
 
 # 验证底层硬件后端是否被 Triton 自动发现
 python3 -c "from triton.backends import backends; print(backends)"
+```
+
+运行冒烟测试，全面验证 C++ 绑定、MLIR Dialect 注册、HWCapability、AnchorIR Validator、TTIR Pipeline 以及 TTIR 生成等核心功能：
+
+```bash
+python3 tests/test_smoke.py
 ```

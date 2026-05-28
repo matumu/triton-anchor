@@ -9,17 +9,17 @@
 ```bash
 # 后台启动基础镜像（可根据需要挂载硬件特定的驱动目录，例如 /opt/tpuv7）
 docker run --privileged -itd --name triton-anchor-dev \
-    -v $PWD/triton:/triton \
+    -v $PWD/workspace:/workspace \
     ubuntu:24.04
 
 # 进入容器
 docker exec -it triton-anchor-dev bash
 
 # 更新包索引
-apt-get update
+apt update
 
 # 安装基础编译工具链和依赖
-apt-get install -y \
+apt install -y \
     build-essential \
     cmake \
     ninja-build \
@@ -78,20 +78,33 @@ uv pip install setuptools wheel pybind11
 
 5. 编译完成后，你的 LLVM 构建目录为 `$HOME/llvm-project/build`。你可以直接将其作为参数传给 `envsetup.sh` 脚本来进行环境变量初始化。
 
-## 4. 安装 triton-anchor
+## 4. 环境变量配置
+
+在进行构建之前，你需要通过 `envsetup.sh` 脚本配置相关的环境变量。
+
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| `WORKSPACE` | `/workspace` | 工作目录，支持手动指定 |
+| `LLVM_BUILD_DIR` | `$WORKSPACE/llvm-release` | LLVM 编译产物主目录，支持手动指定 |
+
+你可以通过如下方式来初始化环境：
+
+```bash
+# 使用默认路径 (/workspace/llvm-release)
+source envsetup.sh
+
+# 如果您有自定义的 LLVM 构建路径，请通过环境变量传入：
+export LLVM_BUILD_DIR=/path/to/llvm-release
+source envsetup.sh
+```
+
+## 5. 安装 triton-anchor
 
 `triton-anchor` 包含了上游 Triton 的核心 C++ 基础设施以及自身的扩展管线（如 `triton-linalg`），负责构建完整的编译管线和分发 AnchorIR 规范。通过 `uv` 可以在隔离模式下进行编译与极速安装：
 
 ```bash
-# 假设你已经克隆了代码到 /triton/triton-anchor
-cd /triton/triton-anchor
-
-# 使用提供的 envsetup.sh 脚本快速配置 LLVM 编译环境变量
-# 默认配置路径为 /triton/llvm-release
-source envsetup.sh
-
-# 如果您有自定义的 LLVM 构建路径，也可以直接将其作为参数传入：
-# source envsetup.sh /path/to/llvm-release
+# 假设你已经克隆了代码到 /workspace/triton-anchor
+cd /workspace/triton-anchor
 
 # 1. 构建分发包 (wheel)
 uv build --wheel --no-build-isolation
@@ -100,12 +113,12 @@ uv build --wheel --no-build-isolation
 uv pip install dist/triton_anchor-*.whl
 ```
 
-## 5. 构建与集成硬件后端 (Out-of-Tree)
+## 6. 构建与集成硬件后端 (Out-of-Tree)
 
 > **TODO**: 硬件后端的具体构建与集成流程待完善。
 > 请参考对应的硬件后端仓库（如 `triton-all-backends/sophgo`）中的专用说明文档。
 
-## 6. 验证安装
+## 7. 验证安装
 
 完成构建后，Triton 会通过 `entry_points` 自动发现已安装的后端。
 

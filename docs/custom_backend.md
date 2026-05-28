@@ -1,190 +1,237 @@
 # 自定义硬件后端指南
 
-`triton-anchor` 采用了与硬件彻底解耦的“前端核心 + 后端插件”架构。如果你想为一款全新的硬件（如自主研发的 NPU、TPU 或带有扩展矩阵指令的 DSP）适配 Triton 生态，你需要按照本文档的指导，创建一个独立的 **out-of-tree** 硬件后端包。
+`triton-anchor` 采用"前端核心 + 后端插件"架构。后端以独立的 Python 包形式存在，通过 `entry_points` 机制被 Triton 自动发现和加载，无需修改 Triton 或 triton-anchor 源码。
 
 ## 1. 架构总览
 
-在全新的架构下，后端无需去直接修改 Triton 或 `triton-anchor` 的源代码，而是以一个独立的 Python 包的形式存在。通过标准的 Python `entry_points` 机制，Triton 能够在运行时自动发现并加载你的后端。
+```
+@triton.jit 装饰的函数
+    │
+    ▼  首次调用时触发编译
+compiler.py — MyDeviceBackend(BaseBackend)
+    │  add_stages() 定义编译管线
+    │  TTIR → Linalg → 硬件 IR → .so/.elf
+    │
+    ▼  编译完成后加载执行
+driver.py — MyDeviceDriver(DriverBase)
+    │  launcher_cls → MyDeviceLauncher
+    │  设备管理接口 (target, stream, device)
+    │
+    ▼  每次 kernel 调用时
+MyDeviceLauncher.__call__()
+    └── 加载 .so 并调用硬件运行时 API 执行
+```
 
-一个典型的硬件后端目录结构如下（包含 C++ 扩展与 Python 封装）：
+### 项目结构
 
 ```text
 triton-mydevice-backend/
 ├── pyproject.toml             # 依赖与 entry_points 注册
-├── setup.py                   # 如果需要编译 C++ 扩展 (CMakeExtension)
-├── CMakeLists.txt             # C++ 库的 CMake 构建逻辑
-├── include/                   # C++ 头文件 (如自定义 Dialect、Passes)
-├── lib/                       # C++ 源码实现 (如 Conversion/LinalgToMyDevice)
-├── src/
-│   └── triton_mydevice/
-│       ├── __init__.py        # 导出 compiler_cls 和 driver_cls
-│       ├── compiler.py        # 继承 BaseBackend，定义编译管线 (Passes)
-│       ├── runtime.py         # 继承 DriverBase，定义运行时加载与执行逻辑
-│       └── _C/                # 编译生成的 C++ Pybind 扩展模块存放处
+├── CMakeLists.txt             # C++ 构建（如有自定义 Dialect/Pass）
+├── csrc/                      # C++ 源码（MLIR Dialect、Conversion Pass、Pybind11）
+├── triton_mydevice/           # Python 包（后端核心只需三个文件）
+│   ├── __init__.py            # 导出 compiler_cls / driver_cls + 后端注册
+│   ├── compiler.py            # 继承 BaseBackend，定义编译管线
+│   └── driver.py              # 继承 DriverBase，定义 Launcher + Driver
 └── tests/
-    └── test_smoke.py          # 冒烟测试
+    └── test_smoke.py
 ```
 
 ## 2. 插件注册
 
-你的后端需要通过 `pyproject.toml` (或 `setup.py`) 注册到 `triton.backends` 分组下。
+通过 `pyproject.toml` 注册到 `triton.backends` 分组：
 
 ```toml
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "triton-mydevice-backend"
-version = "0.1.0"
-dependencies = [
-    "triton>=3.0.0",
-]
-
 [project.entry-points."triton.backends"]
-my_device = "triton_my_device"
+my_device = "triton_mydevice"
 ```
-
-这告诉 Triton：当用户通过 `triton.compile(..., target=GPUTarget(backend="my_device", ...))` 请求编译时，请去加载 `triton_my_device` 包。
 
 ## 3. 导出核心类
 
-在你的后端包的 `__init__.py` 中，**必须**在模块级别导出以下两个类：
-
 ```python
-# triton_my_device/__init__.py
+# triton_mydevice/__init__.py
 from .compiler import MyDeviceBackend
-from .runtime import MyDeviceDriver
+from .driver import MyDeviceDriver
 
-# 供 Triton 自动发现拉取 (Pull)
-compiler_cls = MyDeviceBackend
+compiler_cls = MyDeviceBackend   # Triton 的 _discover_backends() 读取
 driver_cls = MyDeviceDriver
 ```
 
-## 4. 实现编译器后端 (`BaseBackend`)
-
-编译器负责将 `triton-anchor` 生成的标准 IR（通常是 TTIR 或者是转换后的 Linalg IR）一步步 Lowering 成最终的硬件可执行文件（`.so`，`.elf` 或其他格式）。
-
-你需要继承 `triton.backends.compiler.BaseBackend`：
+如果需要 `import triton_mydevice` 即激活后端，可在 `__init__.py` 中主动注入：
 
 ```python
-# triton_my_device/compiler.py
-from triton.backends.compiler import BaseBackend, GPUTarget
-from triton_anchor import HWCapability, ComputeParadigm, AnchorIRTrack
+from triton.backends import backends, Backend
+from triton.runtime.driver import driver as _driver_config
 
-class MyDeviceBackend(BaseBackend):
-    def __init__(self, target: GPUTarget) -> None:
-        super().__init__(target)
-        
-        # 必须声明硬件能力，供 triton-anchor 在前端进行验证
-        self.hw_capability = HWCapability(
-            name="my_device",
-            arch_family=target.arch,
-            compute_paradigm=ComputeParadigm.TENSOR_PROCESSOR, # 或 gpGPU
-            anchor_ir_track=AnchorIRTrack.LINALG,              # 使用 Linalg 轨道
-            ptr_model="axis_info",
-        )
-
-    def parse_options(self, opts: dict) -> dict:
-        """解析用户在 @triton.jit 时传入的 kwargs"""
-        parsed = {"debug": opts.get("debug", False)}
-        return parsed
-
-    def add_stages(self, architecture: str, options: dict) -> dict:
-        """
-        定义编译的各个阶段 (Stages)。
-        返回一个有序字典，Key 是该阶段产物的名字（如 "ttir", "linalg", "so"），
-        Value 是处理该阶段的函数。
-        """
-        from triton.backends.compiler import CompileBase
-        
-        def _make_ttir(ast, metadata, opts):
-            # 将 AST 转换为 TTIR
-            ...
-            
-        def _make_linalg(ttir, metadata, opts):
-            # 调用 triton-anchor 的 Adapter 将 TTIR 转为 Linalg
-            ...
-
-        def _make_binary(linalg_ir, metadata, opts) -> bytes:
-            # 【重要】最后一步必须返回包含二进制内容的 bytes 对象。
-            # Triton 的 CacheManager 会自动将这串 bytes 写出到磁盘缓存并生成真实的路径。
-            ...
-
-        stages = dict()
-        stages["ttir"] = _make_ttir
-        stages["linalg"] = _make_linalg
-        stages["binary"] = _make_binary
-        return stages
+backends["my_device"] = Backend(compiler=MyDeviceBackend, driver=MyDeviceDriver)
+_driver_config.set_active(MyDeviceDriver())
 ```
 
-> **⚠️ 重要陷阱警告**：
-> `add_stages` 中定义的最后一个函数（即生成硬件二进制的步骤），必须返回纯粹的 **`bytes` 对象**（包含二进制内容），绝对**不要返回文件路径的字符串**！Triton 的核心缓存管理机制会接管这串字节流，将其保存至 `~/.triton/cache` 中，并在后续流程中将实际的磁盘路径传递给 Launcher。
+## 4. 实现编译器后端 (`compiler.py`)
 
-## 5. 实现运行时驱动 (`DriverBase`)
-
-运行时驱动负责与底层硬件交互（查询设备数量、分配内存等），并负责加载编译器生成的二进制文件执行。
-
-你需要继承 `triton.backends.driver.DriverBase`：
+继承 `BaseBackend`，核心是 `add_stages()` 定义编译管线：
 
 ```python
-# triton_my_device/runtime.py
+# triton_mydevice/compiler.py
+from triton.backends.compiler import BaseBackend, GPUTarget
+
+class MyDeviceBackend(BaseBackend):
+    binary_ext = 'so'
+
+    @staticmethod
+    def supports_target(target: GPUTarget):
+        return target.backend == 'my_device'
+
+    def parse_options(self, opts):
+        # 解析 @triton.jit 的 kwargs，返回 Options 对象
+        ...
+
+    def pack_metadata(self, metadata):
+        # 将编译元数据打包为 tuple，传递给 Launcher
+        ...
+
+    def load_dialects(self, ctx):
+        # 加载自定义 MLIR 方言（如有 C++ Dialect）
+        ...
+
+    def add_stages(self, stages, options):
+        stages["ttir"]   = lambda src, metadata: _make_ttir(src, metadata, options)
+        stages["linalg"] = lambda src, metadata: _make_linalg(src, metadata, options)
+        stages["so"]     = lambda src, metadata: _make_binary(src, metadata)
+```
+
+### 编译阶段
+
+每个 stage 签名为 `(module, metadata) → module`，最后一个 stage 必须返回 `bytes`。
+
+```python
+def _make_ttir(mod, metadata, options):
+    """Stage 1: 标准 TTIR 优化 (inliner, combine, cse, licm 等)。"""
+    from triton._C.libtriton import ir, passes
+    pm = ir.pass_manager(mod.context)
+    passes.common.add_inliner(pm)
+    passes.ttir.add_combine(pm)
+    passes.common.add_canonicalizer(pm)
+    # ... 其他标准 passes
+    pm.run(mod)
+    return mod
+
+
+def _make_linalg(mod, metadata, options):
+    """Stage 2: TTIR → Linalg（使用 triton-anchor 的 adapter pass 管线）。"""
+    from triton._C.libtriton.anchor import anchor_passes as passes
+    pm = ir.pass_manager(mod.context)
+    tl = passes.triton_to_linalg
+    tl.add_triton_to_linalg(pm)
+    # ... 其他 anchor passes
+    pm.run(mod)
+    return mod
+
+
+def _make_binary(mod, metadata) -> bytes:
+    """Stage 3: Linalg → 硬件二进制。
+
+    1. Dump IR 到文件
+    2. 调用硬件编译工具链（你的编译器）
+    3. 读取产物 .so 为 bytes 返回
+    """
+    metadata.setdefault("shared", 0)
+    function_name = metadata["name"]
+    # ... dump mod 到 .mlir 文件
+    # ... 调用硬件编译器
+    # ... 读取 .so
+    metadata["so_path"] = so_path          # Launcher 通过此字段获取路径
+    with open(so_path, "rb") as f:
+        return f.read()                    # 必须返回 bytes
+```
+
+> [!CAUTION]
+> 最后一个 stage **必须返回 `bytes`**，不要返回文件路径字符串。Triton 的缓存系统会接管这串字节流并写入 `~/.triton/cache`。
+
+## 5. 实现运行时驱动 (`driver.py`)
+
+driver.py 包含四个组件：
+
+| 组件 | 职责 |
+|------|------|
+| `MyDeviceUtils` | 设备属性查询、`load_binary()` 透传编译产物 |
+| `MyDeviceLauncher` | 解析 JIT 参数，调用硬件 API 执行 kernel |
+| `MyDeviceInterface` | 模拟 CUDA 的 Event/Stream 语义（autotuner 需要） |
+| `MyDeviceDriver` | 设备管理入口，继承 `DriverBase` |
+
+```python
+# triton_mydevice/driver.py
+from triton.backends.compiler import GPUTarget
 from triton.backends.driver import DriverBase
 
+
+class MyDeviceUtils:
+    """设备属性 + load_binary (透传编译产物给 Launcher)。"""
+    @staticmethod
+    def load_binary(name, kernel_obj, shared, device):
+        return (None, kernel_obj, None, None)
+
+
 class MyDeviceLauncher:
-    """真实的 Kernel 启动器"""
+    """内核启动器。
+
+    __init__(src, metadata): 从 src 提取 constants/signature，
+                             计算非常量参数的位置映射。
+    __call__(*args):         前 9 个是 triton 框架参数 (grid, stream, hooks...),
+                             第 10 个起是用户 kernel 参数。
+    """
     def __init__(self, src, metadata):
-        # src 是一个元组，Triton CacheManager 会传递形如：
-        # ("<生成二进制的文件绝对路径>", ) 或者 (bytes, path) 的格式
-        
-        # 在标准的 JIT 流程中，我们从 src 中提取写好的缓存文件路径
-        self.so_path = src[1] if isinstance(src, tuple) else src
-        self.metadata = metadata
+        # 解析 src.constants, src.signature → 参数位置映射
+        self.kernel_name = getattr(metadata, "name", "kernel")
+        self.so_path = getattr(metadata, "so_path", "")
 
     def __call__(self, *args, **kwargs):
-        # 使用你底层的 C++ 运行时 API 加载并执行 self.so_path
-        # 例如: my_runtime_lib.launch(self.so_path, self.metadata.name, *args)
-        pass
+        gridX, gridY, gridZ = args[0], args[1], args[2]
+        kernel_user_args = args[9:]
+        # 调用你的硬件运行时 API
+        # my_runtime.launch(self.so_path, self.kernel_name, kernel_user_args, grid=...)
+
+
+class MyDeviceInterface:
+    """模拟 CUDA device/stream/event（triton benchmarking 需要）。"""
+    # 实现 current_device(), synchronize(), Event(), Stream() 等
+
 
 class MyDeviceDriver(DriverBase):
     def __init__(self):
         super().__init__()
-        # 指向你的启动器类
+        self.utils = MyDeviceUtils()
         self.launcher_cls = MyDeviceLauncher
 
-    def get_current_device(self):
-        # 返回当前选中的设备 ID
-        return 0
+    @staticmethod
+    def is_active():
+        return True
 
-    def get_current_stream(self, device):
-        # 返回当前的计算流 ID (Stream)
-        return 0
+    def get_current_target(self):
+        return GPUTarget("my_device", 0, 0)
 
-    def get_device_capability(self):
-        # 对于非 Nvidia 显卡，Triton 要求返回 Tuple，通常返回类似 ("my_arch", 0) 即可
-        return ("my_arch", 0)
-    
-    ... # 其他你需要实现的抽象方法
+    def get_device_interface(self):
+        return MyDeviceInterface
+
+    # 还需实现: get_current_device(), get_current_stream(),
+    #           get_device_capability(), set_current_device() 等
 ```
 
 ## 6. 测试与验证
 
-完成上述开发后，你可以使用以下脚本冒烟验证你的后端是否能被 `triton-anchor` 正确识别：
-
 ```python
-import triton
+# tests/test_smoke.py
+import triton_mydevice
 from triton.backends.compiler import GPUTarget
+from triton_mydevice.compiler import MyDeviceBackend
+from triton_mydevice.driver import MyDeviceDriver
 
-# 1. 验证目标对象实例化
-target = GPUTarget(backend="my_device", arch="arch_v1", warp_size=32)
+target = GPUTarget("my_device", 0, 32)
+assert MyDeviceBackend.supports_target(target)
 
-# 2. 验证 Backend 注册发现
-backend_cls = triton.compiler.compiler.make_backend(target)
-print("发现 Backend:", backend_cls)
-
-# 3. 验证硬件能力校验
-assert hasattr(backend_cls, "hw_capability"), "必须声明 hw_capability"
-print("使用的 AnchorIR 轨道:", backend_cls.hw_capability.anchor_ir_track)
+driver = MyDeviceDriver()
+assert driver.is_active()
+print(f"current_target: {driver.get_current_target()}")
 ```
 
-**一切就绪后，你就可以像往常一样，通过 `@triton.jit` 并指定 `target=target` 或者配置对应的环境变量（如 `TRITON_PRINT_AUTOTUNING` 等），让标准的 Triton 前端通过 `triton-anchor` 平滑过度到你自定义的芯片后端上执行了！**
+**一切就绪后，你就可以通过 `@triton.jit` 让 Triton 前端经由 `triton-anchor` 平滑地调用你的自定义芯片后端了！**

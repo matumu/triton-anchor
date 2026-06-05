@@ -1,4 +1,4 @@
-﻿#include "mlir/IR/BuiltinOps.h" // mlir::ModuleOp
+#include "mlir/IR/BuiltinOps.h" // mlir::ModuleOp
 #include "mlir/Target/LLVMIR/LLVMTranslationInterface.h"
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
 #include "triton/Tools/Sys/GetEnv.hpp"
@@ -437,11 +437,14 @@ void init_triton_llvm(py::module &&m) {
   m.def("init_targets", []() {
     static std::once_flag init_flag;
     std::call_once(init_flag, []() {
-      llvm::InitializeAllTargetInfos();
-      llvm::InitializeAllTargets();
-      llvm::InitializeAllTargetMCs();
-      llvm::InitializeAllAsmParsers();
-      llvm::InitializeAllAsmPrinters();
+      // 只初始化 Native（x86_64）目标，避免引用 tsingmicro LLVM 工具链
+      // 中缺少静态库的 RISC-V、AMDGPU 等 backend（TargetSelect.h 头文件
+      // 声明了这些初始化函数，但实际 .a 库未包含在工具链里）。
+      // 实际的 tsingmicro 硬件目标由 triton-tsingmicro-backend 自行注册。
+      llvm::InitializeNativeTarget();
+      llvm::InitializeNativeTargetAsmParser();
+      llvm::InitializeNativeTargetAsmPrinter();
+      llvm::InitializeNativeTargetDisassembler();
     });
   });
 

@@ -1690,7 +1690,7 @@ void init_triton_ir(py::module &&m) {
               std::vector<int32_t> &tensorShape) -> Value {
              return self.create<MakeTensorDescOp>(base, shape, strides,
                                                   tensorShape);
-           })
+           });
       // Proton Ops 已移除
 
       py::class_<PassManager>(m, "pass_manager", py::module_local())

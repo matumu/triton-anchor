@@ -57,6 +57,7 @@ llvm::raw_ostream &mlir_dumps_or_dbgs() {
   }
 }
 
+
 // Run the pass manager under a source manager diagnostic handler, which
 // enables emitted MLIR diagnostics to directly reference Python source
 // code. This diagnostic handler supports filtering diagnostic info by
@@ -1276,14 +1277,9 @@ void init_triton_ir(py::module &&m) {
       // Input/Output
       .def("create_load",
            [](TritonOpBuilder &self, Value &ptrs, CacheModifier cacheModifier,
-              EvictionPolicy evictionPolicy, bool isVolatile,
-              std::optional<std::string> flagtree_hints) -> Value {
-             auto flagtreeHintsAttr =
-                 flagtree_hints
-                     ? mlir::StringAttr::get(self.getContext(), *flagtree_hints)
-                     : mlir::StringAttr::get(self.getContext(), "");
+              EvictionPolicy evictionPolicy, bool isVolatile) -> Value {
              return self.create<LoadOp>(ptrs, cacheModifier, evictionPolicy,
-                                        isVolatile, flagtreeHintsAttr);
+                                        isVolatile);
            })
       .def("create_store",
            [](TritonOpBuilder &self, Value &ptrs, Value &value,
@@ -1296,16 +1292,10 @@ void init_triton_ir(py::module &&m) {
               std::vector<int32_t> &boundaryCheck,
               std::optional<PaddingOption> paddingOption,
               CacheModifier cacheModifier, EvictionPolicy evictionPolicy,
-              bool isVolatile,
-              std::optional<std::string> flagtree_hints) -> Value {
-             auto flagtreeHintsAttr =
-                 flagtree_hints
-                     ? mlir::StringAttr::get(self.getContext(), *flagtree_hints)
-                     : mlir::StringAttr::get(self.getContext(), "");
-
+              bool isVolatile) -> Value {
              return self.create<LoadOp>(ptr, boundaryCheck, paddingOption,
                                         cacheModifier, evictionPolicy,
-                                        isVolatile, flagtreeHintsAttr);
+                                        isVolatile);
            })
       .def("create_tensor_pointer_store",
            [](TritonOpBuilder &self, Value &ptr, Value &val,
@@ -1317,15 +1307,10 @@ void init_triton_ir(py::module &&m) {
       .def("create_masked_load",
            [](TritonOpBuilder &self, Value &ptrs, Value &mask,
               std::optional<Value> &other, CacheModifier cacheModifier,
-              EvictionPolicy evictionPolicy, bool isVolatile,
-              std::optional<std::string> flagtree_hints) -> Value {
-             auto flagtreeHintsAttr =
-                 flagtree_hints
-                     ? mlir::StringAttr::get(self.getContext(), *flagtree_hints)
-                     : mlir::StringAttr::get(self.getContext(), "");
+              EvictionPolicy evictionPolicy, bool isVolatile) -> Value {
              return self.create<LoadOp>(ptrs, mask, other.value_or(Value()),
                                         cacheModifier, evictionPolicy,
-                                        isVolatile, flagtreeHintsAttr);
+                                        isVolatile);
            })
       .def("create_masked_store",
            [](TritonOpBuilder &self, Value &ptrs, Value &val, Value &mask,

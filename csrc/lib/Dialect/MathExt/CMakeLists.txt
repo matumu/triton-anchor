@@ -1,14 +1,16 @@
 #===------------------------------------------------------------------------===#
 #
 # mlir-ext MathExt 方言库
-# 编译 .cpp.inc 以定义 mathext op 的 TypeID 静态变量。
-# ConversionPatterns.hpp 通过 MathExt.h 引用这些 op，
-# linker 需要此库提供 TypeID 的定义。
+#
+# 来自 flir/lib/Dialect/MathExt/IR/，经过简化：
+# - 移除 ub::PoisonOp 依赖（MLIRUBDialect 不在 llvm21 工具链中）
+# - materializeConstant 仅保留 arith::ConstantOp 的实现
 #
 #===------------------------------------------------------------------------===#
 
 add_triton_library(MLIRMathExtDialect
   MathExtDialect.cpp
+  MathExtOps.cpp
 
   DEPENDS
   MLIRMathExtDialectIncGen
@@ -17,4 +19,5 @@ add_triton_library(MLIRMathExtDialect
   LINK_LIBS PUBLIC
   MLIRIR
   MLIRArithDialect
+  MLIRMathDialect
 )

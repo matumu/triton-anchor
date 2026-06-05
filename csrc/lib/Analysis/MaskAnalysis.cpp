@@ -4,10 +4,6 @@
 // Licensed under the MIT license.
 //
 //===----------------------------------------------------------------------===//
-// triton-anchor 不依赖 flagtree/UnifiedHardware：
-// incubatedTag 默认为 false（FlagTree 基类默认实现）
-// tsingmicro 后端如需启用 parseRemsi/parseDivsi，在后端的 UnifiedHardware 实现里返回 true
-
 #include "triton-shared/Analysis/MaskAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -46,8 +42,7 @@ void dimInfo::dump() const {
 /////////////ascend
 LogicalResult MaskState::parse(Value operand, const Location loc,
                                OpBuilder &builder) {
-  // triton-anchor: incubatedTag 固定为 false，禁用 FlagTree 专有的 parseRemsi/parseDivsi
-  // （tsingmicro 后端在自己的 pass 里通过覆写 createUnifiedHardwareManager 启用）
+  // parseRemsi/parseDivsi 是 FlagTree 专有扩展，在 triton-anchor 中未启用。
   constexpr bool incubatedTag = false;
   if (auto op = operand.getDefiningOp<arith::ConstantOp>()) {
     return this->parseConstant(op, loc, builder);

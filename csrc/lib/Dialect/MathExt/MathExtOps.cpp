@@ -17,12 +17,14 @@ using namespace mlir::mathext;
 //===----------------------------------------------------------------------===//
 
 OpFoldResult mathext::FModOp::fold(FoldAdaptor adaptor) {
-  return constFoldBinaryOp<FloatAttr>(adaptor.getOperands(),
-                                     [](const APFloat &a, const APFloat &b) {
-                                       APFloat result(a);
-                                       (void)result.mod(b);
-                                       return result;
-                                     });
+  // 显式传 void 作为 PoisonAttr 模板参数，跳过 UB 语义
+  // （MLIRUBDialect 不在此工具链中；见 CommonFolders.h 的 static_assert 说明）
+  return constFoldBinaryOp<FloatAttr, APFloat, void>(
+      adaptor.getOperands(), [](const APFloat &a, const APFloat &b) {
+        APFloat result(a);
+        (void)result.mod(b);
+        return result;
+      });
 }
 
 //===----------------------------------------------------------------------===//
@@ -30,12 +32,13 @@ OpFoldResult mathext::FModOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult mathext::DivRzOp::fold(FoldAdaptor adaptor) {
-  return constFoldBinaryOp<FloatAttr>(adaptor.getOperands(),
-                                     [](const APFloat &a, const APFloat &b) {
-                                       APFloat result(a);
-                                       result.divide(b, APFloat::rmTowardZero);
-                                       return result;
-                                     });
+  // 同上，显式传 void 跳过 UB/Poison 语义
+  return constFoldBinaryOp<FloatAttr, APFloat, void>(
+      adaptor.getOperands(), [](const APFloat &a, const APFloat &b) {
+        APFloat result(a);
+        result.divide(b, APFloat::rmTowardZero);
+        return result;
+      });
 }
 
 /// Materialize an integer or floating point constant.

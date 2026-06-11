@@ -12,6 +12,18 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 # ═══════════════════════════════════════════════════════════════════════
+# 青微平台专有编译宏映射与配置 (ANCHOR_BACKEND)
+# ═══════════════════════════════════════════════════════════════════════
+if(NOT DEFINED ANCHOR_BACKEND AND DEFINED ENV{ANCHOR_BACKEND})
+  set(ANCHOR_BACKEND $ENV{ANCHOR_BACKEND})
+endif()
+
+if(ANCHOR_BACKEND STREQUAL "tsingmicro")
+  message(STATUS "Anchor Backend configured: tsingmicro")
+  add_compile_definitions(ANCHOR_BACKEND_TSINGMICRO)
+endif()
+
+# ═══════════════════════════════════════════════════════════════════════
 # LLVM / MLIR 查找
 # ═══════════════════════════════════════════════════════════════════════
 if(NOT MLIR_DIR)

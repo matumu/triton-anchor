@@ -148,7 +148,7 @@ struct ScalarStoreConverter : public OpConversionPattern<tts::ScatterOp> {
 
     auto storeVal = scatterOp.getValue();
 
-#ifdef FLAGTREE_BACKEND_TSINGMICRO
+#ifdef ANCHOR_BACKEND_TSINGMICRO
     rewriter.create<memref::StoreOp>(
         loc, storeVal, memref,
         ValueRange{rewriter.create<arith::ConstantIndexOp>(loc, 0)});
@@ -237,7 +237,7 @@ struct GatherConverter : public OpConversionPattern<tts::GatherOp> {
     auto genericOp = rewriter.create<linalg::GenericOp>(
         loc, TypeRange{resultType}, inputs, ValueRange{emptyTensor}, affineMaps,
         iteratorTypes, [&](OpBuilder &b, Location loc, ValueRange args) {
-#ifdef FLAGTREE_BACKEND_TSINGMICRO
+#ifdef ANCHOR_BACKEND_TSINGMICRO
           auto getValueAtIndex = [baseMemref](OpBuilder &b, Location loc,
                                               Value index) -> Value {
             Value index0 =

@@ -537,7 +537,7 @@ LogicalResult MaskState::parseLoopIterArg(Value v, const Location loc,
       return failure();
     }
 
-#ifdef FLAGTREE_BACKEND_TSINGMICRO
+#ifdef ANCHOR_BACKEND_TSINGMICRO
     if (llvm::isa_and_nonnull<arith::ConstantOp>(tritonValue.getDefiningOp())) {
       // It's accurately a size 1 tl.arange op
       auto constOp = tritonValue.getDefiningOp<arith::ConstantOp>();

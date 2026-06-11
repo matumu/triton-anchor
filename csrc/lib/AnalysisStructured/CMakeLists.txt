@@ -1,4 +1,4 @@
-if(FLAGTREE_BACKEND STREQUAL "tsingmicro")
+if(ANCHOR_BACKEND STREQUAL "tsingmicro")
 add_triton_library(TritonSharedAnalysisStructured
   PtrAnalysisTS.cpp
 

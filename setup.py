@@ -205,7 +205,6 @@ setup(
     packages=get_packages(),
     install_requires=["filelock"],
     package_data={
-        "triton.tools": ["compile.h", "compile.c"],
         "triton": [
             "include/**/*.h", "include/**/*.hpp", "include/**/*.inc", "include/**/*.def", "include/**/*.td",
             "include/**/**/*.h", "include/**/**/*.hpp", "include/**/**/*.inc", "include/**/**/*.def", "include/**/**/*.td",

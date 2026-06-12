@@ -16,7 +16,6 @@ from ..runtime.jit import get_jit_fn_file_line
 # ideally we wouldn't need any runtime component
 from ..runtime import JITFunction
 from .._utils import find_paths_if, get_iterable_path, set_iterable_path
-from .hint_manager import hint_trigger
 
 from .errors import (CompilationError, CompileTimeAssertionFailure, UnsupportedLanguageConstruct)
 
@@ -1244,7 +1243,6 @@ class CodeGenerator(ast.NodeVisitor):
         args = list(itertools.chain.from_iterable(x if isinstance(x, list) else [x] for x in args))
 
         # 4. Get current line number and hints
-        flagtree_hints = hint_trigger("get_node_hints", self, node)
 
         # 5. Handle JIT function calls
         if isinstance(fn, JITFunction):
@@ -1258,9 +1256,6 @@ class CodeGenerator(ast.NodeVisitor):
             if '_generator' in sig.parameters:
                 extra_kwargs['_generator'] = self
             try:
-                # Special handling for tl.load with hints
-                hint_trigger("inject_kwargs_with_hints", fn, flagtree_hints, node.lineno, kws)
-
                 ret = fn(*args, **extra_kwargs, **kws)
                 # builtin functions return plain tuples for readability
                 if isinstance(ret, tuple):

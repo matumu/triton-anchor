@@ -1047,7 +1047,7 @@ def _canonicalize_boundary_check(boundary_check, block_shape):
     return ()
 
 
-def _load_block_pointer(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile, flagtree_hints,
+def _load_block_pointer(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile,
                         builder):
     # Load by a block pointer: `pointer_type<block_type<>>`
     # Block pointer can not have `mask` and `other` arguments
@@ -1067,11 +1067,10 @@ def _load_block_pointer(ptr, mask, other, boundary_check, padding, cache, evicti
 
     # Build IR
     return tl.tensor(
-        builder.create_tensor_pointer_load(ptr.handle, boundary_check, padding, cache, eviction, is_volatile,
-                                           flagtree_hints), dst_ty)
+        builder.create_tensor_pointer_load(ptr.handle, boundary_check, padding, cache, eviction, is_volatile), dst_ty)
 
 
-def _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile, flagtree_hints, builder):
+def _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile, builder):
     # Load by a tensor of pointers or a pointer of scalar: `block_type<pointer_type<>>` or `pointer_type<>`
     if not ptr.type.scalar.is_ptr():
         raise ValueError(f"Unsupported ptr type {ptr.type.__repr__()} in `tl.load`")
@@ -1123,18 +1122,18 @@ def _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_
 
     # Build IR
     if mask is None:
-        ret = tl.tensor(builder.create_load(ptr.handle, cache, eviction, is_volatile, flagtree_hints), dst_ty)
+        ret = tl.tensor(builder.create_load(ptr.handle, cache, eviction, is_volatile), dst_ty)
     else:
         ret = tl.tensor(
             builder.create_masked_load(ptr.handle, mask.handle, other.handle if other else None, cache, eviction,
-                                       is_volatile, flagtree_hints), dst_ty)
+                                       is_volatile), dst_ty)
     if is_bool:
         ret = cast(ret, tl.int1, builder)
     return ret
 
 
 def load(ptr: tl.tensor, mask: Optional[tl.tensor], other: Optional[tl.tensor], boundary_check: Tuple,
-         padding_option: str, cache_modifier: str, eviction_policy: str, is_volatile: bool, flagtree_hints: str,
+         padding_option: str, cache_modifier: str, eviction_policy: str, is_volatile: bool,
          builder: ir.builder) -> tl.tensor:
     # Cache, eviction and padding options
     cache = _str_to_load_cache_modifier(cache_modifier)
@@ -1144,10 +1143,10 @@ def load(ptr: tl.tensor, mask: Optional[tl.tensor], other: Optional[tl.tensor], 
     if ptr.type.is_ptr() and ptr.type.element_ty.is_block():
         # Load by a block pointer: `pointer_type<block_type<>>`
         return _load_block_pointer(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile,
-                                   flagtree_hints, builder)
+                                   builder)
     else:
         # Load by a tensor of pointers or a pointer of scalar: `block_type<pointer_type<>>` or `pointer_type<>`
-        return _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile, flagtree_hints,
+        return _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile,
                             builder)
 
 

@@ -707,7 +707,6 @@ class JITFunction(KernelInterface[T]):
         assert isinstance(tree, ast.Module)
         assert len(tree.body) == 1
         assert isinstance(tree.body[0], ast.FunctionDef)
-
         return tree
 
     def __call__(self, *args, **kwargs):

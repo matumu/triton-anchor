@@ -1047,8 +1047,7 @@ def _canonicalize_boundary_check(boundary_check, block_shape):
     return ()
 
 
-def _load_block_pointer(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile,
-                        builder):
+def _load_block_pointer(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile, builder):
     # Load by a block pointer: `pointer_type<block_type<>>`
     # Block pointer can not have `mask` and `other` arguments
     if mask is not None or other is not None:
@@ -1142,12 +1141,10 @@ def load(ptr: tl.tensor, mask: Optional[tl.tensor], other: Optional[tl.tensor], 
 
     if ptr.type.is_ptr() and ptr.type.element_ty.is_block():
         # Load by a block pointer: `pointer_type<block_type<>>`
-        return _load_block_pointer(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile,
-                                   builder)
+        return _load_block_pointer(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile, builder)
     else:
         # Load by a tensor of pointers or a pointer of scalar: `block_type<pointer_type<>>` or `pointer_type<>`
-        return _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile,
-                            builder)
+        return _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile, builder)
 
 
 def reinterpret_tensor_descriptor(desc_ptr: tl.tensor, block_ty: tl.block_type, builder: ir.builder):

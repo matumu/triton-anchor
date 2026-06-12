@@ -1229,27 +1229,17 @@ class CodeGenerator(ast.NodeVisitor):
         return next(unflatten_ir_values(handles, [callee_ret_type]))
 
     def visit_Call(self, node):
-        # 1. Get the called function object
         fn = _unwrap_if_constexpr(self.visit(node.func))
-
-        # 2. Check if it's a statically implemented function
         static_implementation = self.statically_implemented_functions.get(fn)
         if static_implementation is not None:
             return static_implementation(self, node)
 
-        # 3. Process keyword and positional arguments
         kws = dict(self.visit(keyword) for keyword in node.keywords)
         args = [self.visit(arg) for arg in node.args]
         args = list(itertools.chain.from_iterable(x if isinstance(x, list) else [x] for x in args))
-
-        # 4. Get current line number and hints
-
-        # 5. Handle JIT function calls
         if isinstance(fn, JITFunction):
             _check_fn_args(node, fn, args)
             return self.call_JitFunction(fn, args, kws)
-
-        # 6. Handle built-in functions or calls with special context
         if (hasattr(fn, '__self__') and _is_triton_value(fn.__self__)) or language.core.is_builtin(fn):
             extra_kwargs = {"_builder": self.builder}
             sig = inspect.signature(fn)
@@ -1270,7 +1260,6 @@ class CodeGenerator(ast.NodeVisitor):
                 # be in core.py.
                 raise CompilationError(self.jit_fn.src, node, None) from e
 
-        # 7. Handle calls from built-in namespace
         if fn in self.builtin_namespace.values():
             args = map(_unwrap_if_constexpr, args)
         ret = fn(*args, **kws)

@@ -170,6 +170,7 @@ set(TRITON_ANCHOR_EXPORTED_TARGETS
     # triton-shared Dialect（来自 flir）
     TritonStructuredIR
     TritonTilingExtIR
+    MLIRMathExtDialect
 
     # triton-shared Conversion passes（flir 原生，硬件无关）
     TritonToLinalg
@@ -253,6 +254,7 @@ if(TRITON_BUILD_PYTHON_MODULE)
     # triton-shared Dialect（来自 flir）
     TritonStructuredIR
     TritonTilingExtIR
+    MLIRMathExtDialect
 
     # triton-shared Conversion passes（flir 原生，硬件无关）
     TritonToLinalg

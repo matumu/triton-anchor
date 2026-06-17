@@ -14,6 +14,7 @@
 #include "triton-shared/Analysis/PtrAnalysis.h"
 #include "triton-shared/Conversion/TritonArithToLinalg/ConversionPatterns_FlagTree.hpp"
 #include "triton-shared/Dialect/TritonTilingExt/IR/TritonTilingExtDialect.h"
+#include "mlir-ext/Dialect/MathExt/IR/MathExt.h"
 #include "triton-shared/Utils/Utils.h"
 
 #include "triton/Dialect/Triton/IR/Dialect.h"
@@ -2542,9 +2543,10 @@ public:
     POPULATE_BINARY_OP("__nv_atan2", math::Atan2Op);
     POPULATE_BINARY_OP("__nv_powf", math::PowFOp);
     POPULATE_BINARY_OP("__nv_pow", math::PowFOp);
-    POPULATE_BINARY_OP("fmod", arith::RemFOp);
+    POPULATE_BINARY_OP("fmod", mathext::FModOp);
     POPULATE_BINARY_OP("powf", math::PowFOp);
     POPULATE_BINARY_OP("div_rn", arith::DivFOp);
+    POPULATE_BINARY_OP("div_rz", mathext::DivRzOp);
     POPULATE_BINARY_OP("atan2", math::Atan2Op);
 
 #undef POPULATE_BINARY_OP

@@ -281,10 +281,10 @@ import triton.language as tl  # noqa: E402
 
 
 @triton.jit
-def _smoke_add_kernel(x_ptr, y_ptr, out_ptr, n, BLOCK: tl.constexpr):
-    """冒烟测试用的简单 kernel，定义在模块顶层以满足 JIT 作用域要求"""
+def _smoke_add_kernel(x_ptr, y_ptr, out_ptr, n):
+    """冒烟测试用的简单 kernel，不使用 constexpr 以避免 ASTFunction 索引问题"""
     pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    offs = pid * 256 + tl.arange(0, 256)
     mask = offs < n
     x = tl.load(x_ptr + offs, mask=mask)
     y = tl.load(y_ptr + offs, mask=mask)
@@ -306,17 +306,23 @@ class _MinimalOptions:
         self.allow_fp8e4nv = False
         self.max_num_imprecise_acc_default = False
         self.debug = False
+        self.sanitize_overflow = True
+
+    def __getattr__(self, name):
+        # 对 Triton code generator 可能访问的其他 options 字段返回安全默认值，
+        # 避免因版本差异导致 AttributeError
+        return None
 
 
 def test_ttir_generation():
     """验证 Triton JIT 函数可以成功编译为 TTIR"""
     from triton._C.libtriton import ir, anchor
+    from triton.compiler.code_generator import ast_to_ttir
 
-    # 构建 ASTSource
+    # 构建 ASTSource（所有参数都在 signature 中，无 constexpr）
     src = triton.compiler.ASTSource(
         fn=_smoke_add_kernel,
-        signature={0: "*fp32", 1: "*fp32", 2: "*fp32", 3: "i32"},
-        constants={4: 256},
+        signature={"x_ptr": "*fp32", "y_ptr": "*fp32", "out_ptr": "*fp32", "n": "i32"},
     )
 
     # 创建 MLIR context 并加载方言
@@ -324,7 +330,13 @@ def test_ttir_generation():
     ir.load_dialects(ctx)
     anchor.load_dialects(ctx)
 
-    ttir_module = src.make_ir(options=_MinimalOptions(), codegen_fns=None, context=ctx)
+    # 直接调用 ast_to_ttir 生成 TTIR
+    # codegen_fns={} 表示不使用任何后端特定的代码生成函数
+    ttir_module = ast_to_ttir(
+        _smoke_add_kernel, src,
+        context=ctx, options=_MinimalOptions(),
+        codegen_fns={}, module_map={},
+    )
     ir_text = str(ttir_module)
 
     assert "tt.func" in ir_text or "func.func" in ir_text, "TTIR 中应包含函数定义"

@@ -1,5 +1,6 @@
+if(ANCHOR_BACKEND STREQUAL "tsingmicro")
 add_triton_library(TritonSharedAnalysisStructured
-  PtrAnalysis.cpp
+  PtrAnalysisTS.cpp
 
   DEPENDS
   TritonTableGen
@@ -10,3 +11,16 @@ add_triton_library(TritonSharedAnalysisStructured
   TritonStructuredIR
   MLIRAnalysis
 )
+else()
+add_triton_library(TritonSharedAnalysisStructured
+  PtrAnalysis.cpp
+
+  DEPENDS
+  TritonTableGen
+  TritonStructuredTableGen
+
+  LINK_LIBS PUBLIC
+  TritonStructuredIR
+  MLIRAnalysis
+)
+endif()

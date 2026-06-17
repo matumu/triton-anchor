@@ -8,7 +8,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-// triton-anchor: 不依赖 flagtree/UnifiedHardware，默认 reduceStrategy = "default"
 
 #include "triton-shared/Analysis/MaskAnalysis.h"
 #include "triton-shared/Analysis/OpFoldResultUtils.h"
@@ -1316,9 +1315,7 @@ private:
           op, "Only support lowering reduction with body "
               "containing 1 max(i/f), addf, ori, or mulf.");
 #else
-    // flagtree: Use unified hardware manager to determine reduction strategy
-    // triton-anchor: 不使用 UnifiedHardware，固定为默认策略（FlagTree 基类默认实现返回 "default"）
-    const std::string reduceStrategy = "default";
+    const std::string reduceStrategy = "linalg_reduce";
 
     if (reductionOps.size() != 1) {
       if (reduceStrategy=="linalg_reduce") {

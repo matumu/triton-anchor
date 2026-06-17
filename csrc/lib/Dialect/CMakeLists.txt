@@ -1,3 +1,4 @@
-# triton-shared Dialect 定义（来自 flir）
-add_subdirectory(TritonStructured)
 add_subdirectory(TritonTilingExt)
+add_subdirectory(TPtr)
+add_subdirectory(MathExt)
+add_subdirectory(TritonStructured)

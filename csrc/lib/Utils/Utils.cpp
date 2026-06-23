@@ -1,234 +1,305 @@
-//===- Utils.cpp - Dialect utils --------------------------------*- C++ -*-===//
-//
-// Copyright (C) [2022-2025] by Cambricon.
-//
-//===----------------------------------------------------------------------===//
-
-#include "triton-linalg/Utils/Utils.h"
-
-#include <algorithm>
-#include <assert.h>
-#include <optional>
-
+#include "triton-shared/Utils/Utils.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Utils/StaticValueUtils.h"
-#include "mlir/IR/Attributes.h"
-#include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/Location.h"
-#include "mlir/IR/OpDefinition.h"
-#include "mlir/IR/Types.h"
-#include "mlir/IR/Value.h"
-#include "llvm/ADT/APInt.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/Twine.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "triton/Dialect/Triton/IR/Dialect.h"
+#include "triton/Dialect/Triton/IR/Types.h"
+#include "triton-shared/Utils/ReduceScanCommon.h"
+#include "llvm/ADT/TypeSwitch.h"
 
-using namespace mlir;
-using namespace mlir::triton;
-
-bool mlir::triton::createReassociationMaps(
-    OpBuilder &builder, llvm::ArrayRef<int64_t> expandedShape,
-    llvm::ArrayRef<int64_t> collapsedShape,
-    llvm::SmallVector<ReassociationExprs, 4> &reassociationMap) {
-  if (collapsedShape.empty()) {
-    reassociationMap = {};
-    return true;
+namespace mlir {
+namespace triton {
+bool isPtrTypeLike(Type t) {
+  if (auto tensorType = dyn_cast<RankedTensorType>(t)) {
+    return isa<triton::PointerType>(tensorType.getElementType());
   }
+  return isa<triton::PointerType>(t);
+}
 
-  // As tensor.expand_shape/tensor.collapse_shape expected rank
-  // expansion/reduction.
-  if (expandedShape.size() == collapsedShape.size())
-    return false;
-  if (ShapedType::isDynamicShape(expandedShape) ||
-      ShapedType::isDynamicShape(collapsedShape))
-    return false;
+Value getScalarValue(Value operand, Location loc, OpBuilder &builder) {
+  SmallVector<Operation *> ops;
 
-  reassociationMap.resize(collapsedShape.size());
-  unsigned currExpandDim = 0, currCollapseDim = 0;
-  while (currExpandDim < expandedShape.size() &&
-         currCollapseDim < collapsedShape.size()) {
-    int64_t dstSize = collapsedShape[currCollapseDim];
-    int64_t srcSize = expandedShape[currExpandDim];
-    while (srcSize < dstSize && currExpandDim < expandedShape.size()) {
-      reassociationMap[currCollapseDim].push_back(
-          builder.getAffineDimExpr(currExpandDim++));
-      srcSize *= expandedShape[currExpandDim];
+  auto reconstructScalarValue = [&](Value src) {
+    for (auto op = ops.rbegin(); op != ops.rend(); ++op) {
+      src = TypeSwitch<Operation *, Value>(*op)
+                .Case<arith::SIToFPOp>([&](Operation *op) {
+                  auto resType = op->getResults()[0].getType();
+                  if (auto shapedType = dyn_cast<ShapedType>(resType)) {
+                    resType = shapedType.getElementType();
+                  }
+                  return builder.create<arith::SIToFPOp>(loc, resType, src);
+                })
+                .Case<arith::TruncFOp>([&](Operation *op) {
+                  auto resType = op->getResults()[0].getType();
+                  if (auto shapedType = dyn_cast<ShapedType>(resType)) {
+                    resType = shapedType.getElementType();
+                  }
+                  return builder.create<arith::TruncFOp>(loc, resType, src);
+                })
+                .Default([](Operation *op) {
+                  llvm_unreachable("unsupported op in generating ");
+                  return nullptr;
+                });
     }
-    if (srcSize == dstSize) {
-      reassociationMap[currCollapseDim].push_back(
-          builder.getAffineDimExpr(currExpandDim++));
-      // If the next dim in collapsedShape is not 1, treat subsequent dims in
-      // expandedShape which are 1 to be collapsed.
-      if (currCollapseDim == collapsedShape.size() - 1 ||
-          collapsedShape[currCollapseDim + 1] != 1) {
-        while (currExpandDim < expandedShape.size() &&
-               expandedShape[currExpandDim] == 1) {
-          reassociationMap[currCollapseDim].push_back(
-              builder.getAffineDimExpr(currExpandDim++));
+    return src;
+  };
+
+  while (true) {
+    if (!dyn_cast<ShapedType>(operand.getType())) {
+      return reconstructScalarValue(operand);
+    } else if (auto op = operand.getDefiningOp<arith::ConstantOp>()) {
+      if (auto attr = dyn_cast<DenseElementsAttr>(op.getValue())) {
+        if (!attr.isSplat()) {
+          InFlightDiagnostic diag = emitError(loc)
+                                    << "other value used in masked load "
+                                       "produced by unsupported instruction";
+          return nullptr;
         }
+        auto elemValue = attr.getSplatValue<Attribute>();
+        auto constOp = arith::ConstantOp::materialize(
+            builder, elemValue, attr.getElementType(), op.getLoc());
+        return reconstructScalarValue(constOp.getResult());
       }
+    } else if (auto op = operand.getDefiningOp<triton::SplatOp>()) {
+      operand = op.getSrc();
+    } else if (auto op = operand.getDefiningOp<arith::SIToFPOp>()) {
+      ops.push_back(op.getOperation());
+      operand = op.getIn();
+    } else if (auto op = operand.getDefiningOp<arith::TruncFOp>()) {
+      ops.push_back(op.getOperation());
+      operand = op.getIn();
+    } else {
+      InFlightDiagnostic diag = emitError(loc)
+                                << "other value used in masked load produced "
+                                   "by unsupported instruction";
+      return nullptr;
     }
-    // If the reassociationMap for the currCollapseDim is empty, clear all
-    // mappings and return false.
-    if (reassociationMap[currCollapseDim].empty()) {
-      reassociationMap.clear();
+  }
+  return nullptr;
+}
+
+bool isOperandMemorySpaceSPM(Value operand) {
+  Operation *lastOp = operand.getDefiningOp();
+  Operation *op = lastOp;
+  // May be nested scf::ForOp block arguments
+  if (!op && isa<BlockArgument>(operand)) {
+    auto argBlock = operand.getParentBlock()->getParentOp();
+    if (auto funcOp = dyn_cast<func::FuncOp>(argBlock)) {
       return false;
     }
-    currCollapseDim++;
-  }
-  // If both iterators didn't reach the end, we have leftover dimentions which
-  // implies that we have a mismatch in shape.
-  return currExpandDim == expandedShape.size() &&
-         currCollapseDim == collapsedShape.size();
-}
+    auto forOp = dyn_cast<scf::ForOp>(argBlock);
+    assert(forOp && "BlockArgument should be in a scf::ForOp");
 
-Value triton::castToIndexType(OpBuilder &b, Location loc, OpFoldResult ofr) {
-  if (auto value = dyn_cast<Value>(ofr)) {
-    if (!isa<IndexType>(value.getType()))
-      return b.createOrFold<arith::IndexCastOp>(loc, b.getIndexType(), value);
-    return value;
-  }
-  auto attr = dyn_cast<IntegerAttr>(dyn_cast<Attribute>(ofr));
-  assert(attr && "expect the op fold result casts to an integer attribute");
-  return b.create<arith::ConstantIndexOp>(loc, attr.getValue().getSExtValue())
-      .getResult();
-}
+    auto initArgs = forOp.getInitArgs();
+    auto arguments = forOp.getBody()->getArguments();
 
-SmallVector<Value> triton::castToIndexType(OpBuilder &b, Location loc,
-                                           ArrayRef<OpFoldResult> ofrs) {
-  SmallVector<Value> ret;
-  for (auto ofr : ofrs) {
-    ret.push_back(castToIndexType(b, loc, ofr));
-  }
-  return ret;
-}
+    auto idx =
+        std::distance(arguments.begin(),
+                      std::find(arguments.begin(), arguments.end(), operand));
+    assert(initArgs.size() + forOp.getNumInductionVars() == arguments.size() &&
+           "InitArgs and InductionVars should match the arguments size");
 
-OpFoldResult triton::addOFRs(OpFoldResult lhs, OpFoldResult rhs, Location loc,
-                             OpBuilder &builder) {
-  auto lhsIntAttr = getConstantIntValue(lhs);
-  auto rhsIntAttr = getConstantIntValue(rhs);
-
-  // Shortcut for special cases.
-  if (!lhsIntAttr && rhsIntAttr && rhsIntAttr.value() == 0)
-    return lhs;
-  if (!rhsIntAttr && lhsIntAttr && lhsIntAttr.value() == 0)
-    return rhs;
-
-  // Both lhs and rhs are constants, return result directly.
-  if (lhsIntAttr && rhsIntAttr)
-    return builder.getIndexAttr(lhsIntAttr.value() + rhsIntAttr.value());
-
-  // Otherwise, need to create instructions to calculate new attribute value.
-  auto lhsValue = castToIndexType(builder, loc, lhs);
-  auto rhsValue = castToIndexType(builder, loc, rhs);
-  return builder.create<arith::AddIOp>(loc, lhsValue, rhsValue).getResult();
-}
-
-OpFoldResult triton::subOFRs(OpFoldResult lhs, OpFoldResult rhs, Location loc,
-                             OpBuilder &builder) {
-  auto lhsIntAttr = getConstantIntValue(lhs);
-  auto rhsIntAttr = getConstantIntValue(rhs);
-
-  // Shortcut for special cases.
-  if (!lhsIntAttr && rhsIntAttr && rhsIntAttr.value() == 0)
-    return lhs;
-
-  // Both lhs and rhs are constants, return result directly.
-  if (lhsIntAttr && rhsIntAttr)
-    return builder.getIndexAttr(lhsIntAttr.value() - rhsIntAttr.value());
-
-  // Otherwise, need to create instructions to calculate new attribute value.
-  auto lhsValue = castToIndexType(builder, loc, lhs);
-  auto rhsValue = castToIndexType(builder, loc, rhs);
-  return builder.create<arith::SubIOp>(loc, lhsValue, rhsValue).getResult();
-}
-
-OpFoldResult triton::minOFRs(OpFoldResult lhs, OpFoldResult rhs, Location loc,
-                             OpBuilder &builder) {
-  auto lhsIntAttr = getConstantIntValue(lhs);
-  auto rhsIntAttr = getConstantIntValue(rhs);
-
-  // Both lhs and rhs are constants, return result directly.
-  if (lhsIntAttr && rhsIntAttr)
-    return builder.getIndexAttr(
-        std::min(lhsIntAttr.value(), rhsIntAttr.value()));
-
-  // Otherwise, need to create instructions to calculate new attribute value.
-  auto lhsValue = castToIndexType(builder, loc, lhs);
-  auto rhsValue = castToIndexType(builder, loc, rhs);
-  return builder.create<arith::MinSIOp>(loc, lhsValue, rhsValue).getResult();
-}
-
-OpFoldResult triton::mulOFRs(OpFoldResult lhs, OpFoldResult rhs, Location loc,
-                             OpBuilder &builder) {
-  auto lhsIntAttr = getConstantIntValue(lhs);
-  auto rhsIntAttr = getConstantIntValue(rhs);
-
-  // Shortcuts for special cases.
-  if (lhsIntAttr) {
-    if (lhsIntAttr.value() == 0)
-      return lhs;
-    if (lhsIntAttr.value() == 1)
-      return rhs;
-  }
-  if (rhsIntAttr) {
-    if (rhsIntAttr.value() == 0)
-      return rhs;
-    if (rhsIntAttr == 1)
-      return lhs;
+    int initArgIdx = idx - forOp.getNumInductionVars();
+    assert(initArgIdx >= 0 && initArgIdx < initArgs.size() &&
+           "Index out of bounds for initArgs");
+    operand = initArgs[idx - forOp.getNumInductionVars()];
+    return isOperandMemorySpaceSPM(operand);
   }
 
-  // Both lhs and rhs are constants.
-  if (lhsIntAttr && rhsIntAttr)
-    return builder.getIndexAttr(lhsIntAttr.value() * rhsIntAttr.value());
+  do {
+    if (isa<memref::AllocOp>(op))
+      return true;
+    else if (isa<memref::GetGlobalOp>(op))
+      return false;
+    else if (auto forOp = dyn_cast<scf::ForOp>(op)) {
+      // Here we assume that yieldResults (inner loop region) and
+      // loopResults (outer loop region) correspond one-to-one to obtain the
+      // inner loop region definingOp of the outer loop region value.
+      // FIXME:  Need reference the standard loop analysis to refactor this.
 
-  // Otherwise, need to create instructions to calculate new attribute value.
-  auto lhsValue = castToIndexType(builder, loc, lhs);
-  auto rhsValue = castToIndexType(builder, loc, rhs);
-  return builder.create<arith::MulIOp>(loc, lhsValue, rhsValue).getResult();
+      auto yieldResults = forOp.getYieldedValues();
+      mlir::ResultRange loopResults = forOp.getLoopResults().value();
+      assert(yieldResults.size() == loopResults.size());
+      auto idx = std::distance(
+          loopResults.begin(),
+          std::find(loopResults.begin(), loopResults.end(), operand));
+      operand = yieldResults[idx];
+      if (operand.getDefiningOp() == nullptr) {
+        operand = forOp.getInitArgs()[idx];
+      }
+    } else if (auto ifOp = dyn_cast<scf::IfOp>(op)) {
+      bool thenResult = isOperandMemorySpaceSPM(ifOp.thenYield().getOperand(0));
+      bool elseResult = isOperandMemorySpaceSPM(ifOp.elseYield().getOperand(0));
+      assert(thenResult == elseResult &&
+             "Inconsistent memory space for IfOp results: "
+             "one branch uses SPM, another branch does not");
+      return thenResult;
+    } else if (auto selectOp = dyn_cast<arith::SelectOp>(op)) {
+      // Assuming that the selectOp is used to select between two pointers with
+      // same memory space, we can check the memory space of the first operand.
+      operand = op->getOperand(1);
+    } else {
+      operand = op->getOperand(0);
+    }
+    lastOp = op;
+    op = operand.getDefiningOp();
+  } while (op);
+  return false;
 }
 
-OpFoldResult triton::divOFRs(OpFoldResult lhs, OpFoldResult rhs, Location loc,
-                             OpBuilder &builder) {
-  auto lhsIntAttr = getConstantIntValue(lhs);
-  auto rhsIntAttr = getConstantIntValue(rhs);
+// Function to declare Tx81 runtime function
+Value declareTx81Function(ModuleOp module, OpBuilder &builder, Location loc,
+                          StringRef name, Type resultType,
+                          ArrayRef<Type> argumentTypes) {
+  // Check if the function already exists
+  Operation *funcOp = module.lookupSymbol(name);
+  if (funcOp)
+    return builder.create<LLVM::AddressOfOp>(
+        loc, LLVM::LLVMPointerType::get(builder.getContext()), name);
 
-  // Shortcuts for special cases.
-  if (lhsIntAttr) {
-    if (lhsIntAttr.value() == 0)
-      return lhs;
-  }
-  if (rhsIntAttr) {
-    assert(rhsIntAttr.value() != 0 && "the divisor cannot be 0");
-    if (rhsIntAttr == 1)
-      return lhs;
-  }
+  // Create function type
+  Type funcType = LLVM::LLVMFunctionType::get(resultType, argumentTypes,
+                                              /*isVarArg=*/false);
 
-  // Both lhs and rhs are constants.
-  if (lhsIntAttr && rhsIntAttr)
-    return builder.getIndexAttr(lhsIntAttr.value() / rhsIntAttr.value());
+  // Create a function declaration
+  auto ip = builder.saveInsertionPoint();
+  builder.setInsertionPointToStart(module.getBody());
 
-  // Otherwise, need to create instructions to calculate new attribute value.
-  auto lhsValue = castToIndexType(builder, loc, lhs);
-  auto rhsValue = castToIndexType(builder, loc, rhs);
-  return builder.create<arith::DivSIOp>(loc, lhsValue, rhsValue).getResult();
+  builder.create<LLVM::LLVMFuncOp>(loc, name, funcType,
+                                   LLVM::Linkage::External);
+
+  builder.restoreInsertionPoint(ip);
+
+  // Return function pointer
+  return builder.create<LLVM::AddressOfOp>(
+      loc, LLVM::LLVMPointerType::get(builder.getContext()), name);
 }
 
-OpFoldResult triton::maxOFRs(OpFoldResult lhs, OpFoldResult rhs, Location loc,
-                             OpBuilder &builder) {
-  auto lhsIntAttr = getConstantIntValue(lhs);
-  auto rhsIntAttr = getConstantIntValue(rhs);
+TypedAttr getRedBaseAttr(OpBuilder &builder, Operation *redOp,
+                         Type constantType) {
+  const int64_t bitWidth = constantType.getIntOrFloatBitWidth();
 
-  // Both lhs and rhs are constants, return result directly.
-  if (lhsIntAttr && rhsIntAttr)
-    return builder.getIndexAttr(
-        std::max(lhsIntAttr.value(), rhsIntAttr.value()));
-
-  // Otherwise, need to create instructions to calculate new attribute value.
-  auto lhsValue = castToIndexType(builder, loc, lhs);
-  auto rhsValue = castToIndexType(builder, loc, rhs);
-  return builder.create<arith::MaxSIOp>(loc, lhsValue, rhsValue).getResult();
+  auto attr = llvm::TypeSwitch<Operation *, TypedAttr>(redOp)
+                  .Case([&](arith::AddFOp) {
+                    return builder.getFloatAttr(constantType, 0.f);
+                  })
+                  .Case([&](arith::AddIOp) {
+                    return builder.getIntegerAttr(constantType, 0);
+                  })
+                  .Case([&](arith::MulFOp) {
+                    return builder.getFloatAttr(constantType, 1.f);
+                  })
+                  .Case([&](arith::MulIOp) {
+                    return builder.getIntegerAttr(constantType, 1);
+                  })
+                  .Case<arith::MaximumFOp, arith::MaxNumFOp>([&](auto) {
+                    return builder.getFloatAttr(
+                        constantType, -std::numeric_limits<float>::infinity());
+                  })
+                  .Case<arith::MinimumFOp, arith::MinNumFOp>([&](auto) {
+                    return builder.getFloatAttr(
+                        constantType, std::numeric_limits<float>::infinity());
+                  })
+                  .Case([&](arith::MinSIOp) {
+                    return builder.getIntegerAttr(constantType,
+                                                  llvm::maxIntN(bitWidth));
+                  })
+                  .Case([&](arith::MinUIOp) {
+                    return builder.getIntegerAttr(constantType,
+                                                  llvm::maxUIntN(bitWidth));
+                  })
+                  .Case([&](arith::MaxSIOp) {
+                    return builder.getIntegerAttr(constantType,
+                                                  llvm::minIntN(bitWidth));
+                  })
+                  .Case([&](arith::MaxUIOp) {
+                    return builder.getIntegerAttr(constantType, 0);
+                  })
+                  .Case([&](arith::OrIOp) {
+                    return builder.getIntegerAttr(constantType, 0);
+                  })
+                  .Case([&](arith::XOrIOp) {
+                    return builder.getIntegerAttr(constantType, 0);
+                  })
+                  .Case([&](arith::AndIOp) {
+                    return builder.getIntegerAttr(constantType,
+                                                  llvm::maxUIntN(bitWidth));
+                  })
+                  .Default([](Operation *op) {
+                    op->dump();
+                    llvm_unreachable("Reduction op not yet supported");
+                    return nullptr;
+                  });
+  return attr;
 }
+
+arith::ConstantOp getRedBaseConstOp(ConversionPatternRewriter &rewriter,
+                                    Operation *redOp, Type constantType) {
+  auto attr = getRedBaseAttr(rewriter, redOp, constantType);
+  return rewriter.create<arith::ConstantOp>(redOp->getLoc(), constantType,
+                                            attr);
+}
+
+bool isTypeRestrictedTargetSupportedReductionOp(mlir::Operation *redOp) {
+  return isa<arith::AddFOp, arith::MaximumFOp, arith::MaxNumFOp,
+             arith::MinimumFOp, arith::MinNumFOp>(redOp);
+}
+
+bool isTargetSupportedReductionOp(mlir::Operation *redOp) {
+  return isTypeRestrictedTargetSupportedReductionOp(redOp) ||
+         isa<arith::AddIOp, arith::MaxSIOp, arith::MinSIOp>(redOp);
+}
+
+bool isReduceLogicOp(mlir::Operation *redOp) {
+  return isa<arith::XOrIOp, arith::AndIOp, arith::OrIOp>(redOp);
+}
+
+bool isTypeRestrictedTargetSupportedReduceToElementWiseOp(
+    mlir::Operation *redOp) {
+  return isa<arith::MulFOp>(redOp) || isReduceLogicOp(redOp);
+}
+
+bool isTargetSupportedReduceToElementWiseOp(mlir::Operation *redOp) {
+  return isTypeRestrictedTargetSupportedReduceToElementWiseOp(redOp) ||
+         isa<arith::MulIOp>(redOp);
+}
+
+bool isTritonAllowedReductionOp(Operation *redOp) {
+  return isTargetSupportedReductionOp(redOp) ||
+         isTargetSupportedReduceToElementWiseOp(redOp) ||
+         isa<arith::MinUIOp, arith::MaxUIOp>(redOp);
+}
+
+bool isTargetSupportedFloatType(Type elementType) {
+  // Check if the operation is a supported type.
+  return elementType.isBF16() || elementType.isF16() || elementType.isF32() ||
+         elementType.isTF32();
+}
+
+bool isTargetSupportedType(Type elementType) {
+  // Check if the operation is a supported type.
+  return isTargetSupportedFloatType(elementType) || elementType.isInteger(8);
+}
+
+bool isReductionOpAndTypeSupportedByTarget(mlir::Operation *redOp,
+                                           Type elementType) {
+  return isTypeRestrictedTargetSupportedReductionOp(redOp) &&
+         isTargetSupportedFloatType(elementType);
+}
+
+bool isReduceToElementWiseOpAndTypeSupportedByTarget(mlir::Operation *redOp,
+                                                     Type elementType,
+                                                     int64_t elemCount,
+                                                     int64_t rank) {
+
+  // I1 type need special handle (Memref type i1 need 8bit alignment)
+  // NOTE: Here can optimize 64 to 8 element
+  return (isa<arith::MulFOp>(redOp) &&
+          isTargetSupportedFloatType(elementType)) ||
+         (isReduceLogicOp(redOp) &&
+          !(elementType.isInteger(1) && (rank > 1 || elemCount <= 64)));
+}
+
+} // namespace triton
+
+} // namespace mlir

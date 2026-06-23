@@ -1,7 +1,14 @@
-add_triton_library(TritonLinalgAnalysis
-  AxisInfoAnalysis.cpp
+add_triton_library(TritonSharedAnalysis
+  MaskAnalysis.cpp
+  OpFoldResultUtils.cpp
+  PtrAnalysis.cpp
+  UseAnalysis.cpp
+
+  DEPENDS
+  TritonTableGen
+  TritonStructuredTableGen
+  TritonGPUAttrDefsIncGen
 
   LINK_LIBS PUBLIC
-  TritonInterfaceExtend
-  MLIRIR
+  MLIRAnalysis
 )

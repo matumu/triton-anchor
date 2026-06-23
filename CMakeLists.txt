@@ -12,6 +12,18 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 # ═══════════════════════════════════════════════════════════════════════
+# 青微平台专有编译宏映射与配置 (ANCHOR_BACKEND)
+# ═══════════════════════════════════════════════════════════════════════
+if(NOT DEFINED ANCHOR_BACKEND AND DEFINED ENV{ANCHOR_BACKEND})
+  set(ANCHOR_BACKEND $ENV{ANCHOR_BACKEND})
+endif()
+
+if(ANCHOR_BACKEND STREQUAL "tsingmicro")
+  message(STATUS "Anchor Backend configured: tsingmicro")
+  add_compile_definitions(ANCHOR_BACKEND_TSINGMICRO)
+endif()
+
+# ═══════════════════════════════════════════════════════════════════════
 # LLVM / MLIR 查找
 # ═══════════════════════════════════════════════════════════════════════
 if(NOT MLIR_DIR)
@@ -28,11 +40,33 @@ include(TableGen)
 include(AddLLVM)
 include(AddMLIR)
 
-# Pybind11: 通过 Python3 的 site-packages 路径自动发现 pip 安装的 pybind11
+# ═══════════════════════════════════════════════════════════════════════
+# pybind11：先通过 Python 询问安装路径，再 fallback 到 HINTS 搜索
+# 覆盖场景：pip install pybind11 / conda install pybind11 / 系统包
+# ═══════════════════════════════════════════════════════════════════════
 find_package(Python3 REQUIRED COMPONENTS Development Interpreter)
-find_package(pybind11 CONFIG REQUIRED HINTS "${Python3_SITELIB}")
 
-# 全局添加 Python 和 pybind11 的 include 路径（与 sophgo 保持一致）
+# 优先通过 pybind11.get_cmake_dir() 获取精确的 cmake 配置路径
+execute_process(
+    COMMAND ${Python3_EXECUTABLE} -c "import pybind11; print(pybind11.get_cmake_dir())"
+    OUTPUT_VARIABLE PYBIND11_CMAKE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE PYBIND11_PYTHON_RESULT
+)
+if(PYBIND11_PYTHON_RESULT EQUAL 0 AND PYBIND11_CMAKE_DIR)
+    message(STATUS "Found pybind11 via Python at: ${PYBIND11_CMAKE_DIR}")
+    list(APPEND CMAKE_PREFIX_PATH "${PYBIND11_CMAKE_DIR}")
+endif()
+
+# 如果外部传入了 pybind11_DIR，优先使用（setup.py 通过 PYBIND11_SYSPATH 传入时会设置）
+find_package(pybind11 CONFIG REQUIRED
+    HINTS
+        "${PYBIND11_CMAKE_DIR}"
+        "${Python3_SITELIB}"
+        "${Python3_SITELIB}/pybind11/share/cmake/pybind11"
+)
+
+# 全局添加 Python 和 pybind11 的 include 路径
 include_directories(${Python3_INCLUDE_DIRS})
 include_directories(${pybind11_INCLUDE_DIR})
 
@@ -120,7 +154,7 @@ add_subdirectory(triton/third_party/f2reduce)
 get_property(TRITON_UPSTREAM_LIBS GLOBAL PROPERTY TRITON_LIBS)
 
 # ═══════════════════════════════════════════════════════════════════════
-# Part 2: 编译 triton-anchor 自有 C++ Pass（triton-linalg 等）
+# Part 2: 编译 triton-anchor 自有 C++ Pass（triton-shared 等）
 # ═══════════════════════════════════════════════════════════════════════
 add_subdirectory(csrc)
 
@@ -131,11 +165,23 @@ add_subdirectory(csrc)
 # 但下游的硬件后端插件（如 triton-sophgo-backend）需要引用这些方言的
 # TypeID 和 Op 方法。这里显式将它们的可见性恢复为 default。
 set(TRITON_ANCHOR_EXPORTED_TARGETS
-    LinalgExtDialect
-    LinalgExtInterface
-    MathExtDialect
-    AuxiliaryDialect
     TritonIR
+
+    # triton-shared Dialect（来自 flir）
+    TritonStructuredIR
+    TritonTilingExtIR
+    MLIRMathExtDialect
+
+    # triton-shared Conversion passes（flir 原生，硬件无关）
+    TritonToLinalg
+    TritonToStructured
+    TritonToUnstructured
+    UnstructuredToMemref
+    TritonPtrToMemref
+
+    # triton-shared Analysis
+    TritonSharedAnalysis
+    TritonSharedAnalysisStructured
 )
 foreach(target ${TRITON_ANCHOR_EXPORTED_TARGETS})
     if(TARGET ${target})
@@ -167,7 +213,8 @@ if(TRITON_BUILD_PYTHON_MODULE)
     ${PYTHON_SRC_PATH}/passes.cc
     ${PYTHON_SRC_PATH}/interpreter.cc
     ${PYTHON_SRC_PATH}/llvm.cc
-    csrc/bindings/triton_anchor_passes.cc
+    # triton-anchor 扩展绑定（注册 triton-shared 方言和 Pass）
+    ${CMAKE_CURRENT_SOURCE_DIR}/csrc/bindings/triton_anchor_ext.cc
   )
 
   set(TRITON_LIBRARIES
@@ -204,24 +251,22 @@ if(TRITON_BUILD_PYTHON_MODULE)
     MLIRTensorDialect
     MLIRAffineDialect
 
-    # triton-anchor 本身的内部库
-    TritonLinalgAnalysis
-    TritonLinalgPipelines
-    TritonLinalgUtils
-    ArithToLinalg
-    MathToLinalg
+    # triton-shared Dialect（来自 flir）
+    TritonStructuredIR
+    TritonTilingExtIR
+    MLIRMathExtDialect
+
+    # triton-shared Conversion passes（flir 原生，硬件无关）
     TritonToLinalg
-    LinalgExtDialect
-    LinalgExtInterface
-    LinalgExtTransforms
-    MathExtDialect
-    AuxiliaryDialect
-    AuxiliaryTransforms
-    TritonTransformsExtend
-    TritonInterfaceExtend
-    TritonDialectUtils
-    DialectUtils
-    LinalgExtDialectUtils
+    TritonToStructured
+    TritonToUnstructured
+    UnstructuredToMemref
+    TritonPtrToMemref
+
+    # triton-shared Analysis + Utils
+    TritonSharedAnalysis
+    TritonSharedAnalysisStructured
+    TritonSharedUtils
 
     # LLVM
     LLVMPasses

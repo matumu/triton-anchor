@@ -1,35 +1,22 @@
-//===- MathExtDialect.cpp - Dialect for MathExt implementation --*- C++ -*-===//
-//
-// Copyright (C) [2022-2025] by Cambricon.
-//
-//===----------------------------------------------------------------------===//
+#include "mlir-ext/Dialect/MathExt/IR/MathExt.h"
 
-#include "mlir/Dialect/UB/IR/UBOps.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/OpImplementation.h"
 #include "mlir/Transforms/InliningUtils.h"
-#include "triton-linalg/Dialect/MathExt/IR/MathExt.h"
 
 using namespace mlir;
-using namespace mlir::math_ext;
+using namespace mlir::mathext;
 
-#include "triton-linalg/Dialect/MathExt/IR/MathExtOpsDialect.cpp.inc"
+#include "mlir-ext/Dialect/MathExt/IR/MathExtDialect.cpp.inc"
 
-namespace {
-/// This class defines the interface for handling inlining with math
-/// operations.
-struct MathInlinerInterface : public DialectInlinerInterface {
-  using DialectInlinerInterface::DialectInlinerInterface;
+//===----------------------------------------------------------------------===//
+// MathExt dialect.
+//===----------------------------------------------------------------------===//
 
-  /// All operations within math ops can be inlined.
-  bool isLegalToInline(Operation *, Region *, bool, IRMapping &) const final {
-    return true;
-  }
-};
-} // namespace
-
-void mlir::math_ext::MathExtDialect::initialize() {
+void MathExtDialect::initialize() {
   addOperations<
 #define GET_OP_LIST
-#include "triton-linalg/Dialect/MathExt/IR/MathExtOps.cpp.inc"
+#include "mlir-ext/Dialect/MathExt/IR/MathExtOps.cpp.inc"
       >();
-  addInterfaces<MathInlinerInterface>();
 }

@@ -1,4 +1,7 @@
 # Vendored from: https://github.com/openai/triton
-# Commit: 757b6a61e7df814ba806f498f8bb3160f84b120c
-# Date: 2026-05-08
+# Commit: 523a1b235b213bc192f2d5a8999add5bf2d0fea5
+# Date: 2025-02-28
+# Description: triton 3.3 branch cut point (FlagTree triton_v3.3.x fork base)
+# Synced from: FlagTree (flagos-ai/FlagTree, branch triton_v3.3.x)
+# Sync date: 2026-06-04
 # 升级指南见 docs/upgrade_triton.md

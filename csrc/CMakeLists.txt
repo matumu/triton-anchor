@@ -1,2 +1,3 @@
-add_subdirectory(include/triton-linalg)
+add_subdirectory(include)
 add_subdirectory(lib)
+add_subdirectory(bindings)

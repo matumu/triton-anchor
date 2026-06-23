@@ -113,6 +113,12 @@ class CMakeBuild(build_ext):
                 "-DPYBIND11_INCLUDE_DIR=" + os.path.join(pybind11_syspath, "include"),
                 "-Dpybind11_DIR=" + os.path.join(pybind11_syspath, "share", "cmake", "pybind11"),
             ]
+        else:
+            try:
+                import pybind11
+                cmake_args += ["-Dpybind11_DIR=" + pybind11.get_cmake_dir()]
+            except ImportError:
+                pass
 
         # 构建类型
         cfg = get_build_type()
@@ -145,7 +151,9 @@ class CMakeBuild(build_ext):
             if not os.path.exists(src_dir): return
             for root, _, files in os.walk(src_dir):
                 for f in files:
-                    if f.endswith(".h") or f.endswith(".inc") or f.endswith(".def"):
+                    # .td 文件是 TableGen 源文件，.hpp 是部分 triton 工具头
+                    # 两者都需要安装，供下游后端（mlir-tblgen 和 g++）使用
+                    if f.endswith((".h", ".inc", ".def", ".td", ".hpp")):
                         src_path = os.path.join(root, f)
                         rel_path = os.path.relpath(src_path, src_dir)
                         dst_path = os.path.join(out_dir, rel_path)
@@ -171,8 +179,6 @@ def get_packages():
         "triton.compiler",
         "triton.language",
         "triton.language.extra",
-        "triton.language.extra.cuda",
-        "triton.language.extra.hip",
         "triton.runtime",
         "triton.backends",
         "triton.tools",
@@ -199,16 +205,15 @@ setup(
     packages=get_packages(),
     install_requires=["filelock"],
     package_data={
-        "triton.tools": ["compile.h", "compile.c"],
         "triton": [
-            "include/**/*.h", "include/**/*.inc", "include/**/*.def",
-            "include/**/**/*.h", "include/**/**/*.inc", "include/**/**/*.def",
-            "include/**/**/**/*.h", "include/**/**/**/*.inc", "include/**/**/**/*.def",
+            "include/**/*.h", "include/**/*.hpp", "include/**/*.inc", "include/**/*.def", "include/**/*.td",
+            "include/**/**/*.h", "include/**/**/*.hpp", "include/**/**/*.inc", "include/**/**/*.def", "include/**/**/*.td",
+            "include/**/**/**/*.h", "include/**/**/**/*.hpp", "include/**/**/**/*.inc", "include/**/**/**/*.def", "include/**/**/**/*.td",
         ],
         "triton_anchor": [
-            "include/**/*.h", "include/**/*.inc", "include/**/*.def",
-            "include/**/**/*.h", "include/**/**/*.inc", "include/**/**/*.def",
-            "include/**/**/**/*.h", "include/**/**/**/*.inc", "include/**/**/**/*.def",
+            "include/**/*.h", "include/**/*.hpp", "include/**/*.inc", "include/**/*.def", "include/**/*.td",
+            "include/**/**/*.h", "include/**/**/*.hpp", "include/**/**/*.inc", "include/**/**/*.def", "include/**/**/*.td",
+            "include/**/**/**/*.h", "include/**/**/**/*.hpp", "include/**/**/**/*.inc", "include/**/**/**/*.def", "include/**/**/**/*.td",
         ],
     },
     include_package_data=True,

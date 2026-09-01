@@ -120,11 +120,18 @@ class CMakeBuildPy(build_py):
             ),
         )
         for old, new in replacements:
+            if old in source:
+                source = source.replace(old, new, 1)
+                continue
+            # build_py can reuse an existing build/lib tree.  Treat an
+            # already-applied replacement as success so repeated Wheel builds
+            # remain deterministic.
+            if (new and new in source) or (not new):
+                continue
             if old not in source:
                 raise RuntimeError(
                     f"upstream code_generator.py changed; missing expected block: {old!r}"
                 )
-            source = source.replace(old, new, 1)
         path.write_text(source)
 
 
@@ -249,7 +256,6 @@ class CMakeBuild(build_ext):
         copy_headers(
             os.path.join(get_base_dir(), "csrc", "include"),
             anchor_include_out_dir,
-            excluded_dirs={"ttgpu"},
         )
         copy_headers(os.path.join(cmake_dir, "csrc", "include"), anchor_include_out_dir)
 

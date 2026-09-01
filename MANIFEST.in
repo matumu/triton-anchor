@@ -17,8 +17,6 @@ exclude triton/lib/Tools/LayoutUtils.cpp
 exclude triton/lib/Tools/LinearLayout.cpp
 exclude triton/python/src/gluon_ir.cc
 exclude triton/python/src/linear_layout.cc
-prune csrc/include/ttgpu
-prune csrc/lib/ttgpu
 prune triton/include/triton/Analysis
 prune triton/include/triton/Conversion
 prune triton/include/triton/Dialect/Gluon

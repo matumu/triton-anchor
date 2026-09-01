@@ -95,7 +95,8 @@ public:
     }
 
     Value sliceTensor = rewriter.create<bufferization::ToTensorOp>(
-        loc, ptrInfo->memref, true, true);
+        loc, mlir::memref::getTensorTypeFromMemRefType(ptrInfo->memref.getType()),
+        ptrInfo->memref, true, true);
     auto tensorType = cast<RankedTensorType>(sliceTensor.getType());
     Value emptyTensor = rewriter.create<tensor::EmptyOp>(
         loc, tensorType.getShape(), tensorType.getElementType(),
@@ -282,8 +283,9 @@ public:
     if (failed(tracker.parse(op.getPtr(), loc, rewriter)))
       return failure();
     Value memref = getDynamicMemRef(loc, tracker.getBase(), resultTy, rewriter);
-    Value originTensor =
-        rewriter.create<bufferization::ToTensorOp>(loc, memref, true, true);
+    Value originTensor = rewriter.create<bufferization::ToTensorOp>(
+        loc, mlir::memref::getTensorTypeFromMemRefType(memref.getType()), memref,
+        true, true);
 
     // Get window.
     auto window = op.getOther();
@@ -353,8 +355,9 @@ public:
       return failure();
 
     Value memref = getDynamicMemRef(loc, tracker.getBase(), valueTy, rewriter);
-    Value originTensor =
-        rewriter.create<bufferization::ToTensorOp>(loc, memref, true, true);
+    Value originTensor = rewriter.create<bufferization::ToTensorOp>(
+        loc, mlir::memref::getTensorTypeFromMemRefType(memref.getType()), memref,
+        true, true);
     // Get scatter init.
     Value scatterInit = rewriter.create<tensor::EmptyOp>(
         op.getLoc(), getDim(rewriter, loc, originTensor, 0),
@@ -460,7 +463,8 @@ public:
                   getCacheModeAttr(op.getContext(), op.getCache()));
 
     Value sliceTensor = rewriter.create<bufferization::ToTensorOp>(
-        loc, originalMemRef, true, true);
+        loc, mlir::memref::getTensorTypeFromMemRefType(originalMemRef.getType()),
+        originalMemRef, true, true);
     auto tensorType = cast<RankedTensorType>(sliceTensor.getType());
     Value emptyTensor = rewriter.create<tensor::EmptyOp>(
         loc, tensorType.getShape(), tensorType.getElementType(),

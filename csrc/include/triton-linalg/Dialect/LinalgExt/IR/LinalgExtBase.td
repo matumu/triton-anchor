@@ -38,7 +38,8 @@ def LinalgExt_Dialect : Dialect {
   let hasConstantMaterializer = 1;
   let extraClassDeclaration = [{
     using RegionBuilderFunType = llvm::function_ref<
-      void(ImplicitLocOpBuilder &b, Block &, ArrayRef<NamedAttribute>)>;
+      void(ImplicitLocOpBuilder &b, Block &, ArrayRef<NamedAttribute>,
+           function_ref<InFlightDiagnostic()>)>;
     RegionBuilderFunType getRegionBuilder(StringRef name) {
       return namedStructuredOpRegionBuilders.lookup(name);
     }

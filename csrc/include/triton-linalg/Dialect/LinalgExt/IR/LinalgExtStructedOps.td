@@ -74,8 +74,11 @@ def BatchConv2DNhwcFhwcOp : LinalgStructuredBase_Op<"batch_conv_2d_nhwc_fhwc",
     SmallVector<mlir::utils::IteratorType> getIteratorTypesArray();
     ArrayAttr getIndexingMaps();
     static void regionBuilder(ImplicitLocOpBuilder &b,
-                              Block &block, ArrayRef<NamedAttribute> attrs);
-    static std::function<void(ImplicitLocOpBuilder &, Block &, ArrayRef<NamedAttribute>)>
+                              Block &block, ArrayRef<NamedAttribute> attrs,
+                              function_ref<InFlightDiagnostic()> emitError);
+    static std::function<void(ImplicitLocOpBuilder &, Block &,
+                              ArrayRef<NamedAttribute>,
+                              function_ref<InFlightDiagnostic()>)>
       getRegionBuilder() {
       return regionBuilder;
     }
@@ -146,9 +149,11 @@ def MakeRangeOp : LinalgStructuredBase_Op<"make_range",
     SmallVector<mlir::utils::IteratorType> getIteratorTypesArray();
     ArrayAttr getIndexingMaps();
     static void regionBuilder(ImplicitLocOpBuilder &b,
-                              Block &block, ArrayRef<NamedAttribute> attrs);
+                              Block &block, ArrayRef<NamedAttribute> attrs,
+                              function_ref<InFlightDiagnostic()> emitError);
     static std::function<void(ImplicitLocOpBuilder &,
-                              Block &, ArrayRef<NamedAttribute>)>
+                              Block &, ArrayRef<NamedAttribute>,
+                              function_ref<InFlightDiagnostic()>)>
     getRegionBuilder() {
       return regionBuilder;
     }
@@ -262,9 +267,11 @@ def Im2ColOp : LinalgStructuredBase_Op<"im2col", [AttrSizedOperandSegments]> {
       SmallVector<mlir::utils::IteratorType> getIteratorTypesArray();
       ArrayAttr getIndexingMaps();
       static void regionBuilder(ImplicitLocOpBuilder &b,
-                                Block &block, ArrayRef<NamedAttribute> attrs);
+                                Block &block, ArrayRef<NamedAttribute> attrs,
+                                function_ref<InFlightDiagnostic()> emitError);
       static std::function<void(ImplicitLocOpBuilder &,
-                                Block &, ArrayRef<NamedAttribute>)>
+                                Block &, ArrayRef<NamedAttribute>,
+                                function_ref<InFlightDiagnostic()>)>
       getRegionBuilder() {
         return regionBuilder;
       }
@@ -345,10 +352,12 @@ class NaiveReduceBaseOp<string mnemonic, list<Trait> props>
       return "op_has_no_registered_library_name";
     }
     static void regionBuilder(ImplicitLocOpBuilder &b,
-                              Block &block, ArrayRef<NamedAttribute> attrs);
+                              Block &block, ArrayRef<NamedAttribute> attrs,
+                              function_ref<InFlightDiagnostic()> emitError);
     // Implement functions necessary for DestinationStyleOpInterface.
     static std::function<void(mlir::ImplicitLocOpBuilder &, mlir::Block &,
-                              mlir::ArrayRef<mlir::NamedAttribute>)>
+                              mlir::ArrayRef<mlir::NamedAttribute>,
+                              mlir::function_ref<mlir::InFlightDiagnostic()>)>
     getRegionBuilder() {
       return regionBuilder;
     }

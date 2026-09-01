@@ -1130,6 +1130,7 @@ def ScalarLibdeviceCallOp : LinalgExt_PureOp<"scalar_libdevice_call", [NoMemoryE
         "StringAttr":$symbol, CArg<"ArrayRef<NamedAttribute>",
         "{}">:$attributes)>,
   ];
+  let skipDefaultBuilders = 1;
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 }

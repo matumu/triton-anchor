@@ -13,9 +13,9 @@ add_triton_library(TritonLLVMIR
         MLIRIndexToLLVM
         MLIRIR
         MLIRLLVMDialect
+        MLIRNVVMToLLVM
         MLIRLLVMToLLVMIRTranslation
         MLIRNVVMToLLVMIRTranslation
-        $<$<BOOL:${TTGPU}>:MLIRFTVMToLLVMIRTranslation>
         MLIRROCDLToLLVMIRTranslation
         MLIRSCFToControlFlow
         MLIRSupport

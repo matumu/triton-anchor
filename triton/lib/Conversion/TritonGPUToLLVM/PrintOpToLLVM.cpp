@@ -26,11 +26,10 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
                   ConversionPatternRewriter &rewriter) const override {
     auto loc = op->getLoc();
 
-    auto getPid = [&](int axis) {
-      return targetInfo.programId(rewriter, loc,
-                                  op->getParentOfType<ModuleOp>(), axis);
-    };
-    std::array<Value, 3> pid = {getPid(0), getPid(1), getPid(2)};
+    std::array<Value, 3> pid;
+    auto module = op->getParentOfType<ModuleOp>();
+    for (auto axis : {ProgramIDDim::X, ProgramIDDim::Y, ProgramIDDim::Z})
+      pid[(int)axis] = targetInfo.programId(rewriter, loc, module, axis);
 
     // Simple printf of a string without any tensors.
     if (op.getNumOperands() == 0) {
@@ -39,12 +38,15 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
       os << "pid (" << getFormatSubstr(pid[0]) << ", "
          << getFormatSubstr(pid[1]) << ", " << getFormatSubstr(pid[2]) << ")"
          << op.getPrefix();
-      llPrintf(formatStr, {pid[0], pid[1], pid[2]}, rewriter);
+      llPrintf(formatStr, {pid[0], pid[1], pid[2]}, {}, rewriter);
       rewriter.eraseOp(op);
       return success();
     }
 
+    assert(op.getNumOperands() == op.getIsSigned().size());
+
     for (size_t i = 0; i < op.getNumOperands(); i++) {
+      bool isSigned = op.getIsSigned()[i] > 0;
       // Elements of the tensor that are resident in this GPU thread.
       auto elems = unpackLLElements(loc, adaptor.getOperands()[i], rewriter);
 
@@ -76,7 +78,7 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
       if (!elems.empty()) {
         printTensor(op.getPrefix(), /*operand=*/i,
                     /*numOperands=*/op.getNumOperands(), elems, pid, indices,
-                    dimWidths, op.getHex(), rewriter);
+                    dimWidths, op.getHex(), rewriter, isSigned);
       }
     }
     rewriter.eraseOp(op);
@@ -87,7 +89,7 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
                    ArrayRef<Value> elems, std::array<Value, 3> pid,
                    ArrayRef<SmallVector<Value>> indices,
                    ArrayRef<int> dimWidths, bool hex,
-                   ConversionPatternRewriter &rewriter) const {
+                   ConversionPatternRewriter &rewriter, bool isSigned) const {
     assert(!elems.empty());
     assert(elems.size() == indices.size());
     assert(dimWidths.size() == indices.front().size());
@@ -151,26 +153,31 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
       }
 
       auto elem = elems[i];
-      os << getFormatSubstr(elem, hex);
+
+      os << getFormatSubstr(elem, hex, /*width=*/std::nullopt, isSigned);
       printfOperands.push_back(elem);
 
       // It's the same format string each iteration, but it's a lot easier if we
       // construct the format string at the same time as we populate
       // printfOperands.  But we don't want to create BLOCK_SIZE duplicate
       // strings, so we cache the Value.
+      auto isSignedOperands =
+          llvm::SmallVector<bool>(printfOperands.size(), isSigned);
       if (i == 0) {
-        formatStrValue =
-            llPrintf(formatStr, printfOperands, rewriter, &formatStrByteCount);
+        formatStrValue = llPrintf(formatStr, printfOperands, isSignedOperands,
+                                  rewriter, &formatStrByteCount);
       } else {
         targetInfo.printf(rewriter, formatStrValue, formatStrByteCount,
-                          printfOperands);
+                          printfOperands, isSignedOperands);
       }
     }
   }
 
   std::string getFormatSubstr(Value value, bool hex = false,
-                              std::optional<int> width = std::nullopt) const {
+                              std::optional<int> width = std::nullopt,
+                              bool isSigned = false) const {
     Type type = value.getType();
+    // If the `value` is a pointer, just return %p.
     if (isa<LLVM::LLVMPointerType>(type)) {
       return "%p";
     }
@@ -190,23 +197,15 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
     std::string prefix = "%";
     if (width.has_value()) {
       prefix += std::to_string(*width);
-    } else if (hex) {
-      prefix += "0";
-      prefix += std::to_string(value.getType().getIntOrFloatBitWidth() / 4);
     }
 
     if (type.isBF16() || type.isF16() || type.isF32() || type.isF64()) {
       return prefix + "f";
-    } else if (type.isSignedInteger()) {
+    } else if (type.isInteger()) {
       if (type.getIntOrFloatBitWidth() == 64)
-        return prefix + "lli";
+        return prefix + (isSigned ? "lli" : "llu");
       else
-        return prefix + "i";
-    } else if (type.isUnsignedInteger() || type.isSignlessInteger()) {
-      if (type.getIntOrFloatBitWidth() == 64)
-        return prefix + "llu";
-      else
-        return prefix + "u";
+        return prefix + (isSigned ? "i" : "u");
     }
     assert(false && "not supported type");
     return "";
@@ -214,7 +213,7 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
 
   // Returns a Value for the format string, which you can reuse. Writes the byte
   // count for the string to |formatStrByteCount| if not null.
-  Value llPrintf(StringRef msg, ValueRange args,
+  Value llPrintf(StringRef msg, ValueRange args, ArrayRef<bool> isSigned,
                  ConversionPatternRewriter &rewriter,
                  int *formatStrByteCount = nullptr) const {
     assert(!msg.empty() && "printf with empty string not supported");
@@ -224,7 +223,8 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
     Value msgValue =
         LLVM::addStringToModule(UnknownLoc::get(rewriter.getContext()),
                                 rewriter, "printfFormat_", msgNewline);
-    targetInfo.printf(rewriter, msgValue, msgNewline.size_in_bytes(), args);
+    targetInfo.printf(rewriter, msgValue, msgNewline.size_in_bytes(), args,
+                      isSigned);
     if (formatStrByteCount)
       *formatStrByteCount = msgNewline.size_in_bytes();
     return msgValue;
